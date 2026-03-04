@@ -1,0 +1,44 @@
+version: 2
+
+builds:
+  - main: ./cmd/claudeline
+    binary: claudeline
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: lexfrei
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/lexfrei/claudeline"
+    description: "Claude Code statusline with real usage limits from Anthropic API"
+    license: "BSD-3-Clause"
+    install: |
+      bin.install "claudeline"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
