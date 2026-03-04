@@ -57,7 +57,6 @@ jobs:
       matrix:
         goos:
           - darwin
-          - linux
         goarch:
           - amd64
           - arm64
