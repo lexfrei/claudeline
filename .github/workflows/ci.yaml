@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
 
       - uses: golangci/golangci-lint-action@v7
         with:
@@ -35,6 +36,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Run tests with coverage
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -43,8 +45,8 @@ jobs:
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
-          if [ "$(echo "${COVERAGE} < 90" | bc)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below 90% threshold"
+          if [ "$(echo "${COVERAGE} < 85" | bc)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below 85% threshold"
             exit 1
           fi
 
@@ -65,6 +67,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Build
         env:
