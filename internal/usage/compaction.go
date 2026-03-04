@@ -2,9 +2,10 @@ package usage
 
 import (
 	"bufio"
-	"encoding/json"
 	"os"
 	"strings"
+
+	"github.com/tidwall/gjson"
 )
 
 const scanBufSize = 256 * 1024
@@ -31,11 +32,7 @@ func CountCompactions(transcriptPath string) int {
 			continue
 		}
 
-		var entry struct {
-			Subtype string `json:"subtype"`
-		}
-
-		if json.Unmarshal([]byte(line), &entry) == nil && entry.Subtype == "compact_boundary" {
+		if gjson.Get(line, "subtype").Str == "compact_boundary" {
 			count++
 		}
 	}
