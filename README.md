@@ -13,7 +13,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ```
 
 ```text
-🤖 Claude | 💰 $0.00 | ⚠️ degraded | 🧠 67% | 🔄 2 | 🟡 7d: 74% (1d 17h) | 🔴 5h: 91% (27m) | 💳 $12/$100
+🤖 Claude | 💰 $0.00 | ⚠️ degraded | 🧠 67% | 🔄 2 | 🟠 7d: 74% (1d 17h) | 🔴 5h: 91% (27m) | 💳 $12/$100
 ```
 
 ## Segments
@@ -22,17 +22,18 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 | --- | --- |
 | 🤖 Model | Active model name |
 | 💰 Cost | Cumulative session cost in USD |
-| ⚠️ Status | Anthropic platform status (only shown when degraded/down) |
+| ⚠️/🔶/🔴 Status | Anthropic platform status: ⚠️ degraded, 🔶 major outage, 🔴 critical (hidden when all clear) |
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
-| 🟢/🟡/🔴 7d | 7-day rolling quota utilization with time until reset |
-| 🟢/🟡/🔴 5h | 5-hour rolling quota utilization with time until reset |
+| 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
+| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset |
 | 💳 Credits | Monthly extra credit usage (only shown when active) |
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
 
 - 🟢 usage pace is sustainable
-- 🟡 usage is ahead of schedule
+- 🟡 usage is slightly ahead of schedule
+- 🟠 usage is significantly ahead of schedule
 - 🔴 on track to hit the limit before reset
 
 ## Requirements
