@@ -23,6 +23,7 @@ brews:
   - repository:
       owner: lexfrei
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/lexfrei/claudeline"
     description: "Claude Code statusline with real usage limits from Anthropic API"
