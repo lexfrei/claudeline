@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	cacheTTL   = 15 * time.Second
 	apiURL     = "https://status.claude.com/api/v2/status.json"
 	apiTimeout = 2 * time.Second
 )
+
+// CacheTTL is the cache duration for status data. Configurable at startup.
+var CacheTTL = 15 * time.Second
 
 // CachePath is the path to the status cache file. Replaceable for testing.
 var CachePath = "/tmp/claude-status-cache.json"
@@ -35,7 +37,7 @@ type apiResponse struct {
 
 // FetchAlert returns a status string if Claude platform has active incidents.
 func FetchAlert() string {
-	if cached, ok := cache.Read(CachePath, cacheTTL); ok {
+	if cached, ok := cache.Read(CachePath, CacheTTL); ok {
 		return string(cached)
 	}
 

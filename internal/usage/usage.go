@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	cacheTTL   = 60 * time.Second
 	apiURL     = "https://api.anthropic.com/api/oauth/usage"
 	apiTimeout = 3 * time.Second
 
@@ -23,6 +22,9 @@ const (
 	halfRound = 0.5
 )
 
+// CacheTTL is the cache duration for usage data. Configurable at startup.
+var CacheTTL = 60 * time.Second
+
 // CachePath is the path to the usage cache file. Replaceable for testing.
 var CachePath = "/tmp/claude-usage-cache.json"
 
@@ -31,7 +33,7 @@ var HTTPGetFn httpclient.GetFn = httpclient.Get
 
 // Fetch retrieves quota usage from Anthropic API (with caching).
 func Fetch() (*Data, error) {
-	if cached, ok := cache.Read(CachePath, cacheTTL); ok {
+	if cached, ok := cache.Read(CachePath, CacheTTL); ok {
 		return ParseBody(cached)
 	}
 
