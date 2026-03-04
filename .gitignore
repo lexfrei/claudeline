@@ -12,5 +12,8 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Test artifacts
+coverage.out
+
 # Cache files (runtime)
 /tmp/
