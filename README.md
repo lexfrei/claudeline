@@ -72,6 +72,38 @@ Add to your Claude Code statusline configuration in `~/.claude/settings.json`:
 
 Claude Code pipes session data as JSON to stdin. claudeline reads it and outputs a formatted statusline string.
 
+## Configuration
+
+Optional config file at `~/.claudelinerc.toml`:
+
+```toml
+[segments]
+model = true
+cost = true
+status = true
+context = true
+compactions = true
+quota = true
+credits = true
+
+[cache]
+usage_ttl = "60s"
+status_ttl = "15s"
+```
+
+Set any segment to `false` to hide it. Cache TTLs control how often API data is refreshed.
+
+### CLI flags
+
+Flags override config file settings:
+
+```bash
+claudeline --no-cost --no-status
+claudeline --config /path/to/config.toml
+```
+
+Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-credits`.
+
 ## License
 
 [BSD-3-Clause](LICENSE)
