@@ -16,7 +16,7 @@ builds:
       - -X main.commit={{.ShortCommit}}
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
 brews:
