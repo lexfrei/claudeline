@@ -56,21 +56,21 @@ go install github.com/lexfrei/claudeline/cmd/claudeline@latest
 
 ## Usage
 
-Add to your Claude Code statusline configuration in `~/.claude/settings.json`:
+Add the `statusLine` block to `~/.claude/settings.json`:
 
 ```json
 {
-  "env": {
-    "CLAUDE_CODE_ENABLE_STATUSLINE": "1"
-  },
-  "statusline": {
+  "statusLine": {
+    "type": "command",
     "command": "claudeline",
-    "interval": 30
+    "padding": 0
   }
 }
 ```
 
 Claude Code pipes session data as JSON to stdin. claudeline reads it and outputs a formatted statusline string.
+
+Restart Claude Code after changing settings.
 
 ## Configuration
 
