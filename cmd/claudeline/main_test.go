@@ -182,6 +182,27 @@ func TestAppendUsageSegmentsLoginNeeded(t *testing.T) {
 	}
 }
 
+func TestAppendUsageSegmentsRateLimited(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "test-token", nil }
+	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
+		return []byte(`{"error":{"type":"rate_limit_error"}}`), nil
+	}
+
+	segments := appendUsageSegments(nil, defaultCfg())
+	joined := strings.Join(segments, " | ")
+
+	if strings.Contains(joined, "/login needed") {
+		t.Errorf("rate_limit_error should not show login needed, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "?%") {
+		t.Errorf("expected placeholder segments, got %q", joined)
+	}
+}
+
 func TestAppendUsageSegmentsSuccess(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()

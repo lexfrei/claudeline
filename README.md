@@ -6,6 +6,8 @@
 
 Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) showing live quota usage from the Anthropic API.
 
+> **⚠️ claudeline uses an undocumented Anthropic API.** If you encounter an unexpected error or status message, please [open an issue](https://github.com/lexfrei/claudeline/issues/new) with the error text — it helps us handle more edge cases!
+
 ## Example output
 
 ```text

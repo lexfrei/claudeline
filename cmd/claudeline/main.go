@@ -185,7 +185,16 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 		return segments
 	}
 
-	if usageData.ErrorType != "" {
+	switch usageData.ErrorType {
+	case "":
+		// no error, continue
+	case "rate_limit_error":
+		if cfg.Segments.Quota {
+			segments = append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+		}
+
+		return segments
+	default:
 		return append(segments, "⚠️ /login needed")
 	}
 
