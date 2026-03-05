@@ -13,6 +13,8 @@ import (
 	"github.com/lexfrei/claudeline/internal/usage"
 )
 
+const testToken = "test-token"
+
 func defaultCfg() *config.Config {
 	cfg := config.Defaults()
 
@@ -169,7 +171,7 @@ func TestAppendUsageSegmentsLoginNeeded(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	keychain.GetFn = func() (string, error) { return "test-token", nil }
+	keychain.GetFn = func() (string, error) { return testToken, nil }
 	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
 		return []byte(`{"error":{"type":"authentication_error"}}`), nil
 	}
@@ -186,7 +188,7 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	keychain.GetFn = func() (string, error) { return "test-token", nil }
+	keychain.GetFn = func() (string, error) { return testToken, nil }
 	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
 		return []byte(`{"error":{"type":"rate_limit_error"}}`), nil
 	}
@@ -209,7 +211,7 @@ func TestAppendUsageSegmentsSuccess(t *testing.T) {
 
 	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
 
-	keychain.GetFn = func() (string, error) { return "test-token", nil }
+	keychain.GetFn = func() (string, error) { return testToken, nil }
 	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
 		return []byte(`{
 			"five_hour": {"utilization": 30, "resets_at": "` + resetsAt + `"},
