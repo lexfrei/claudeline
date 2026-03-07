@@ -90,11 +90,13 @@ quota = true
 credits = true
 
 [cache]
-usage_ttl = "60s"
+usage_ttl = "5m"
 status_ttl = "15s"
 ```
 
 Set any segment to `false` to hide it. Cache TTLs control how often API data is refreshed.
+
+The default `usage_ttl` is **5 minutes** by design. The Anthropic usage API has a very low per-token rate limit (~5 requests before returning persistent HTTP 429). A 5-minute cache interval keeps requests within budget while still providing reasonably fresh data.
 
 ### CLI flags
 
