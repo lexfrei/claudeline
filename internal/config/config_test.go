@@ -40,7 +40,7 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected credits segment enabled by default")
 	}
 
-	if cfg.Cache.UsageTTL != 60*time.Second {
+	if cfg.Cache.UsageTTL != 5*time.Minute {
 		t.Errorf("expected usage TTL 60s, got %v", cfg.Cache.UsageTTL)
 	}
 
@@ -101,7 +101,7 @@ status = false
 		t.Error("expected quota segment enabled (not in config)")
 	}
 
-	if cfg.Cache.UsageTTL != 60*time.Second {
+	if cfg.Cache.UsageTTL != 5*time.Minute {
 		t.Errorf("expected default usage TTL, got %v", cfg.Cache.UsageTTL)
 	}
 }

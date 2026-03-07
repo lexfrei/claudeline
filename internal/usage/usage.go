@@ -22,7 +22,7 @@ const (
 )
 
 // CacheTTL is the cache duration for usage data. Configurable at startup.
-var CacheTTL = 60 * time.Second
+var CacheTTL = 5 * time.Minute
 
 // CachePath is the path to the usage cache file. Replaceable for testing.
 var CachePath = "/tmp/claude-usage-cache.json"
