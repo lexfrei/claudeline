@@ -26,7 +26,7 @@ func Get(url string, headers map[string]string, timeout time.Duration) ([]byte, 
 		req.Header.Set(key, val)
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // URL comes from internal constants
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}

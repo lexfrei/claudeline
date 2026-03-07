@@ -46,7 +46,7 @@ func getDefault() (string, error) {
 
 	var creds struct {
 		ClaudeAiOauth *struct {
-			AccessToken string `json:"accessToken"` //nolint:gosec // Not a credential, just a field name
+			AccessToken string `json:"accessToken"`
 		} `json:"claudeAiOauth"`
 	}
 
