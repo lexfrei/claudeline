@@ -3,7 +3,6 @@ package usage
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/cache"
@@ -65,8 +64,6 @@ func ParseBody(body []byte) (*Data, error) {
 	}
 
 	if resp.Error != nil {
-		_ = os.Remove(CachePath)
-
 		return &Data{ErrorType: resp.Error.Type}, nil
 	}
 

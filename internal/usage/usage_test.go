@@ -11,6 +11,8 @@ import (
 	"github.com/lexfrei/claudeline/internal/keychain"
 )
 
+const testToken = "test-token"
+
 var errTest = errors.New("test error")
 
 func TestParseBody(t *testing.T) {
@@ -206,6 +208,58 @@ func TestFetchCached(t *testing.T) {
 	}
 }
 
+func TestFetchErrorResponseCached(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+
+	defer func() {
+		CachePath = origPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	httpCalls := 0
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
+		httpCalls++
+
+		return []byte(`{"error":{"type":"rate_limit_error"}}`), nil
+	}
+
+	// First call — hits API.
+	data, err := Fetch()
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+
+	if data.ErrorType != "rate_limit_error" {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, "rate_limit_error")
+	}
+
+	if httpCalls != 1 {
+		t.Fatalf("expected 1 HTTP call, got %d", httpCalls)
+	}
+
+	// Second call — must use cache, no additional HTTP request.
+	data, err = Fetch()
+	if err != nil {
+		t.Fatalf("second Fetch failed: %v", err)
+	}
+
+	if data.ErrorType != "rate_limit_error" {
+		t.Errorf("second ErrorType = %q, want %q", data.ErrorType, "rate_limit_error")
+	}
+
+	if httpCalls != 1 {
+		t.Errorf("expected no additional HTTP calls, got %d total", httpCalls)
+	}
+}
+
 func TestFetchNoToken(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
@@ -240,7 +294,7 @@ func TestFetchHTTPError(t *testing.T) {
 		HTTPGetFn = origHTTP
 	}()
 
-	keychain.GetFn = func() (string, error) { return "test-token", nil }
+	keychain.GetFn = func() (string, error) { return testToken, nil }
 	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
 		return nil, errTest
 	}
@@ -267,7 +321,7 @@ func TestFetchSuccess(t *testing.T) {
 
 	resetsAt := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
 
-	keychain.GetFn = func() (string, error) { return "test-token", nil }
+	keychain.GetFn = func() (string, error) { return testToken, nil }
 	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
 		return []byte(`{"five_hour":{"utilization":30,"resets_at":"` + resetsAt + `"}}`), nil
 	}
