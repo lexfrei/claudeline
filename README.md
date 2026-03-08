@@ -10,7 +10,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 
 ## Known limitations
 
-The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per access token before it starts returning HTTP 429 indefinitely. claudeline caches **usage API responses** (both successful and error) for **5 minutes** by default to stay within this budget. Other data (model, cost, context) comes from Claude Code stdin and is always fresh. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
+The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per unknown time window before it starts returning HTTP 429. claudeline caches **usage API responses** (both successful and error) for **5 minutes** by default to stay within this budget. Other data (model, cost, context) comes from Claude Code stdin and is always fresh. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
 
 ## Example output
 
