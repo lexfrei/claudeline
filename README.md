@@ -8,6 +8,10 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 
 > **⚠️ claudeline uses an undocumented Anthropic API.** If you encounter an unexpected error or status message, please [open an issue](https://github.com/lexfrei/claudeline/issues/new) with the error text — it helps us handle more edge cases!
 
+## Known limitations
+
+The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per access token before it starts returning HTTP 429 indefinitely. claudeline caches responses for **5 minutes** by default to stay within this budget. This means quota data may be up to 5 minutes stale. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
+
 ## Example output
 
 ```text
@@ -106,10 +110,6 @@ claudeline --config /path/to/config.toml
 ```
 
 Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-credits`.
-
-## Known limitations
-
-The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per access token before it starts returning HTTP 429 indefinitely. claudeline caches responses for **5 minutes** by default to stay within this budget. This means quota data may be up to 5 minutes stale. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
 
 ## License
 
