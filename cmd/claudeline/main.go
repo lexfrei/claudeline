@@ -175,11 +175,28 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	return fmtutil.JoinPipe(segments)
 }
 
+func appendStaleQuotaSegments(segments []string) []string {
+	lastGood := usage.FetchLastGood()
+	if lastGood == nil {
+		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+	}
+
+	if lastGood.SevenDay != nil {
+		segments = append(segments, usage.FormatStaleQuotaWindow(lastGood.SevenDay, "7d"))
+	}
+
+	if lastGood.FiveHour != nil {
+		segments = append(segments, usage.FormatStaleQuotaWindow(lastGood.FiveHour, "5h"))
+	}
+
+	return segments
+}
+
 func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
-			segments = append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+			segments = appendStaleQuotaSegments(segments)
 		}
 
 		return segments
@@ -190,7 +207,7 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 		// no error, continue
 	case "rate_limit_error":
 		if cfg.Segments.Quota {
-			segments = append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+			segments = appendStaleQuotaSegments(segments)
 		}
 
 		return segments

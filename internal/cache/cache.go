@@ -27,6 +27,16 @@ func Read(path string, ttl time.Duration) ([]byte, bool) {
 	return data, true
 }
 
+// ReadAny returns cached content regardless of age.
+func ReadAny(path string) ([]byte, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	return data, true
+}
+
 // Write stores data to path via temp file + rename for crash safety.
 func Write(path string, data []byte) {
 	tmp := path + ".tmp"

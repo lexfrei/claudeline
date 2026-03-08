@@ -27,6 +27,9 @@ var CacheTTL = 10 * time.Minute
 // CachePath is the path to the usage cache file. Replaceable for testing.
 var CachePath = "/tmp/claude-usage-cache.json"
 
+// LastGoodCachePath stores the last successful API response. Replaceable for testing.
+var LastGoodCachePath = "/tmp/claude-usage-last-good.json"
+
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
 
@@ -67,6 +70,8 @@ func ParseBody(body []byte) (*Data, error) {
 		return &Data{ErrorType: resp.Error.Type}, nil
 	}
 
+	cache.Write(LastGoodCachePath, body)
+
 	result := &Data{}
 
 	if resp.FiveHour != nil {
@@ -101,6 +106,30 @@ func parseWindow(win *apiWindow, totalMinutes int) *QuotaWindow {
 		TotalMinutes:     totalMinutes,
 		RemainingMinutes: remaining,
 	}
+}
+
+// FetchLastGood returns the last successful usage data (no TTL).
+func FetchLastGood() *Data {
+	body, ok := cache.ReadAny(LastGoodCachePath)
+	if !ok {
+		return nil
+	}
+
+	data, err := ParseBody(body)
+	if err != nil || data.ErrorType != "" {
+		return nil
+	}
+
+	return data
+}
+
+// FormatStaleQuotaWindow formats a window with ?% but real time and indicator.
+func FormatStaleQuotaWindow(win *QuotaWindow, label string) string {
+	pct := int(win.Utilization + halfRound)
+	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
+	dur := fmtutil.Duration(win.RemainingMinutes)
+
+	return fmt.Sprintf("%s %s: ?%% (%s)", indicator, label, dur)
 }
 
 // FormatQuotaWindow formats a single quota window for display.
