@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultUsageTTL  = 5 * time.Minute
+	defaultUsageTTL  = 10 * time.Minute
 	defaultStatusTTL = 15 * time.Second
 )
 
