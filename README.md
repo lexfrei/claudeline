@@ -96,8 +96,6 @@ status_ttl = "15s"
 
 Set any segment to `false` to hide it. Cache TTLs control how often API data is refreshed.
 
-The default `usage_ttl` is **5 minutes** by design. The Anthropic usage API has a very low rate limit (~5 requests before returning HTTP 429). A 5-minute cache interval keeps requests within budget while still providing reasonably fresh data.
-
 ### CLI flags
 
 Flags override config file settings:
@@ -108,6 +106,10 @@ claudeline --config /path/to/config.toml
 ```
 
 Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-credits`.
+
+## Known limitations
+
+The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per access token before it starts returning HTTP 429 indefinitely. claudeline caches responses for **5 minutes** by default to stay within this budget. This means quota data may be up to 5 minutes stale. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
 
 ## License
 
