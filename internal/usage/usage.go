@@ -139,7 +139,7 @@ func parseRetryAfterSeconds(header http.Header) int {
 		return defaultRetryAfterSeconds
 	}
 
-	return seconds
+	return max(seconds, 0)
 }
 
 // authFailedForToken returns true if the given token received a 401 within authFailTTL.

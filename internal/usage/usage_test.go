@@ -324,6 +324,11 @@ func TestParseRetryAfterSeconds(t *testing.T) {
 			expected: defaultRetryAfterSeconds,
 		},
 		{
+			name:     "negative value clamped to zero",
+			header:   http.Header{"Retry-After": []string{"-5"}},
+			expected: 0,
+		},
+		{
 			name:     "non-numeric value uses default",
 			header:   http.Header{"Retry-After": []string{"Wed, 11 Mar 2026 18:44:10 GMT"}},
 			expected: defaultRetryAfterSeconds,
