@@ -9,11 +9,18 @@ import (
 	"time"
 )
 
+// Response holds HTTP response data.
+type Response struct {
+	StatusCode int
+	Body       []byte
+	Header     http.Header
+}
+
 // GetFn is the type for HTTP GET functions.
-type GetFn func(url string, headers map[string]string, timeout time.Duration) ([]byte, error)
+type GetFn func(url string, headers map[string]string, timeout time.Duration) (*Response, error)
 
 // Get performs an HTTP GET request with context timeout.
-func Get(url string, headers map[string]string, timeout time.Duration) ([]byte, error) {
+func Get(url string, headers map[string]string, timeout time.Duration) (*Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -37,5 +44,9 @@ func Get(url string, headers map[string]string, timeout time.Duration) ([]byte, 
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
-	return body, nil
+	return &Response{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		Header:     resp.Header,
+	}, nil
 }
