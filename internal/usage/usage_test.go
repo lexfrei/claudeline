@@ -13,7 +13,11 @@ import (
 	"github.com/lexfrei/claudeline/internal/keychain"
 )
 
-const testToken = "test-token"
+const (
+	testToken     = "test-token"
+	authErrorType = "authentication_error"
+	rateLimitType = "rate_limit_error"
+)
 
 var errTest = errors.New("test error")
 
@@ -59,8 +63,8 @@ func TestParseBodyError(t *testing.T) {
 		t.Fatalf("ParseBody failed: %v", err)
 	}
 
-	if data.ErrorType != "authentication_error" {
-		t.Errorf("ErrorType = %q, want %q", data.ErrorType, "authentication_error")
+	if data.ErrorType != authErrorType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, authErrorType)
 	}
 }
 
@@ -422,15 +426,18 @@ func TestFetchRateLimitedRespectsRetryAfter(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
 	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
 	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	defer func() {
 		CachePath = origPath
 		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
@@ -454,8 +461,8 @@ func TestFetchRateLimitedRespectsRetryAfter(t *testing.T) {
 		t.Fatalf("Fetch failed: %v", err)
 	}
 
-	if data.ErrorType != "rate_limit_error" {
-		t.Errorf("ErrorType = %q, want %q", data.ErrorType, "rate_limit_error")
+	if data.ErrorType != rateLimitType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, rateLimitType)
 	}
 
 	if httpCalls != 1 {
@@ -473,8 +480,8 @@ func TestFetchRateLimitedRespectsRetryAfter(t *testing.T) {
 		t.Fatalf("second Fetch failed: %v", err)
 	}
 
-	if data.ErrorType != "rate_limit_error" {
-		t.Errorf("second ErrorType = %q, want %q", data.ErrorType, "rate_limit_error")
+	if data.ErrorType != rateLimitType {
+		t.Errorf("second ErrorType = %q, want %q", data.ErrorType, rateLimitType)
 	}
 
 	if httpCalls != 1 {
@@ -486,15 +493,18 @@ func TestFetchRateLimitedNotCachedInMainCache(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
 	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
 	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	defer func() {
 		CachePath = origPath
 		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
@@ -516,26 +526,30 @@ func TestFetchRateLimitedNotCachedInMainCache(t *testing.T) {
 	}
 }
 
-func TestFetchAuthErrorNotCached(t *testing.T) {
+func TestFetchAuthErrorCachedByToken(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
 	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
 	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	defer func() {
 		CachePath = origPath
 		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
 
 	httpCalls := 0
+	currentToken := "expired-token"
 
-	keychain.GetFn = func() (string, error) { return testToken, nil }
+	keychain.GetFn = func() (string, error) { return currentToken, nil }
 	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
 		httpCalls++
 
@@ -545,16 +559,58 @@ func TestFetchAuthErrorNotCached(t *testing.T) {
 		}, nil
 	}
 
+	// First call — hits API, gets 401, stores token hash.
 	data, _ := Fetch()
-	if data.ErrorType != "authentication_error" {
-		t.Errorf("ErrorType = %q, want %q", data.ErrorType, "authentication_error")
+	if data.ErrorType != authErrorType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, authErrorType)
 	}
 
-	// Second call — should hit API again (not cached).
+	if httpCalls != 1 {
+		t.Fatalf("expected 1 HTTP call, got %d", httpCalls)
+	}
+
+	// Second call with same token — skips API.
+	data, _ = Fetch()
+	if data.ErrorType != authErrorType {
+		t.Errorf("second ErrorType = %q, want %q", data.ErrorType, authErrorType)
+	}
+
+	if httpCalls != 1 {
+		t.Errorf("expected no additional HTTP calls with same token, got %d total", httpCalls)
+	}
+
+	// Third call with new token — hits API again.
+	currentToken = "fresh-token"
+
 	_, _ = Fetch()
 
 	if httpCalls != 2 {
-		t.Errorf("expected 2 HTTP calls (auth errors not cached), got %d", httpCalls)
+		t.Errorf("expected new HTTP call after token change, got %d total", httpCalls)
+	}
+}
+
+func TestHashTokenIrreversible(t *testing.T) {
+	t.Parallel()
+
+	token := "sk-ant-test-token-12345"
+	hashed := hashToken(token)
+
+	if hashed == token {
+		t.Error("hash should not equal the original token")
+	}
+
+	if len(hashed) != 64 {
+		t.Errorf("expected 64-char SHA-256 hex, got %d chars", len(hashed))
+	}
+
+	// Same input produces same hash.
+	if hashToken(token) != hashed {
+		t.Error("expected deterministic hash")
+	}
+
+	// Different input produces different hash.
+	if hashToken("other-token") == hashed {
+		t.Error("expected different hash for different token")
 	}
 }
 
@@ -585,15 +641,18 @@ func TestFetchHTTPError(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
 	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
 	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	defer func() {
 		CachePath = origPath
 		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
@@ -613,15 +672,18 @@ func TestFetchSuccess(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
 	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
 	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	defer func() {
 		CachePath = origPath
 		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()

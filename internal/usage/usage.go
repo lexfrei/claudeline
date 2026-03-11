@@ -1,6 +1,8 @@
 package usage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,6 +40,9 @@ var LastGoodCachePath = "/tmp/claude-usage-last-good.json"
 // RetryAfterPath stores the retry-after deadline. Replaceable for testing.
 var RetryAfterPath = "/tmp/claude-usage-retry-after"
 
+// AuthFailPath stores the token hash of the last authentication failure. Replaceable for testing.
+var AuthFailPath = "/tmp/claude-usage-auth-failed"
+
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
 
@@ -56,6 +61,10 @@ func Fetch() (*Data, error) {
 		return nil, fmt.Errorf("getting oauth token: %w", err)
 	}
 
+	if authFailedForToken(token) {
+		return &Data{ErrorType: "authentication_error"}, nil
+	}
+
 	resp, err := HTTPGetFn(apiURL, map[string]string{
 		"Authorization":  "Bearer " + token,
 		"anthropic-beta": "oauth-2025-04-20",
@@ -66,6 +75,12 @@ func Fetch() (*Data, error) {
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		writeRetryAfter(resp.Header)
+
+		return ParseBody(resp.Body)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		writeAuthFailed(token)
 
 		return ParseBody(resp.Body)
 	}
@@ -113,6 +128,28 @@ func parseRetryAfterSeconds(header http.Header) int {
 	}
 
 	return seconds
+}
+
+// authFailedForToken returns true if the given token previously received a 401.
+func authFailedForToken(token string) bool {
+	data, ok := cache.ReadAny(AuthFailPath)
+	if !ok {
+		return false
+	}
+
+	return string(data) == hashToken(token)
+}
+
+// writeAuthFailed stores the hash of the token that got a 401 response.
+func writeAuthFailed(token string) {
+	cache.Write(AuthFailPath, []byte(hashToken(token)))
+}
+
+// hashToken returns a hex-encoded SHA-256 hash of the token.
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+
+	return hex.EncodeToString(h[:])
 }
 
 // ParseBody parses the usage API response body.

@@ -32,6 +32,7 @@ func setupTestEnv(t *testing.T) func() {
 	origUsagePath := usage.CachePath
 	origLastGoodPath := usage.LastGoodCachePath
 	origRetryAfterPath := usage.RetryAfterPath
+	origAuthFailPath := usage.AuthFailPath
 	origStatusHTTP := status.HTTPGetFn
 	origUsageHTTP := usage.HTTPGetFn
 	origToken := keychain.GetFn
@@ -42,12 +43,14 @@ func setupTestEnv(t *testing.T) func() {
 	usage.CachePath = filepath.Join(dir, "usage-cache.json")
 	usage.LastGoodCachePath = filepath.Join(dir, "usage-last-good.json")
 	usage.RetryAfterPath = filepath.Join(dir, "retry-after")
+	usage.AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	return func() {
 		status.CachePath = origStatusPath
 		usage.CachePath = origUsagePath
 		usage.LastGoodCachePath = origLastGoodPath
 		usage.RetryAfterPath = origRetryAfterPath
+		usage.AuthFailPath = origAuthFailPath
 		status.HTTPGetFn = origStatusHTTP
 		usage.HTTPGetFn = origUsageHTTP
 		keychain.GetFn = origToken
