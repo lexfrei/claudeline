@@ -2,12 +2,14 @@ package usage
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
 )
 
@@ -294,6 +296,90 @@ func TestFormatRateLimitSegment(t *testing.T) {
 	}
 }
 
+func TestParseRetryAfterSeconds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		header   http.Header
+		expected int
+	}{
+		{
+			name:     "valid seconds",
+			header:   http.Header{"Retry-After": []string{"6"}},
+			expected: 6,
+		},
+		{
+			name:     "missing header",
+			header:   http.Header{},
+			expected: 0,
+		},
+		{
+			name:     "non-numeric value",
+			header:   http.Header{"Retry-After": []string{"Wed, 11 Mar 2026 18:44:10 GMT"}},
+			expected: 0,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := parseRetryAfterSeconds(testCase.header)
+			if got != testCase.expected {
+				t.Errorf("parseRetryAfterSeconds() = %d, want %d", got, testCase.expected)
+			}
+		})
+	}
+}
+
+func TestRetryAfterActive(t *testing.T) {
+	dir := t.TempDir()
+	origPath := RetryAfterPath
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+
+	defer func() { RetryAfterPath = origPath }()
+
+	// No file — not active.
+	if retryAfterActive() {
+		t.Error("expected false when no retry-after file")
+	}
+
+	// Future deadline — active.
+	future := time.Now().UTC().Add(1 * time.Minute).Format(time.RFC3339)
+
+	err := os.WriteFile(RetryAfterPath, []byte(future), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !retryAfterActive() {
+		t.Error("expected true for future deadline")
+	}
+
+	// Past deadline — not active.
+	past := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
+
+	err = os.WriteFile(RetryAfterPath, []byte(past), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if retryAfterActive() {
+		t.Error("expected false for past deadline")
+	}
+
+	// Corrupted file — not active.
+	err = os.WriteFile(RetryAfterPath, []byte("garbage"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if retryAfterActive() {
+		t.Error("expected false for corrupted file")
+	}
+}
+
 // Tests below mutate package-level vars and cannot run in parallel.
 
 func TestFetchCached(t *testing.T) {
@@ -332,16 +418,19 @@ func TestFetchCached(t *testing.T) {
 	}
 }
 
-func TestFetchErrorResponseCached(t *testing.T) {
+func TestFetchRateLimitedRespectsRetryAfter(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
+	origRetryPath := RetryAfterPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
 
 	defer func() {
 		CachePath = origPath
+		RetryAfterPath = origRetryPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
@@ -349,13 +438,17 @@ func TestFetchErrorResponseCached(t *testing.T) {
 	httpCalls := 0
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
 		httpCalls++
 
-		return []byte(`{"error":{"type":"rate_limit_error"}}`), nil
+		return &httpclient.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       []byte(`{"error":{"type":"rate_limit_error"}}`),
+			Header:     http.Header{"Retry-After": []string{"6"}},
+		}, nil
 	}
 
-	// First call — hits API.
+	// First call — hits API, gets 429.
 	data, err := Fetch()
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
@@ -369,7 +462,12 @@ func TestFetchErrorResponseCached(t *testing.T) {
 		t.Fatalf("expected 1 HTTP call, got %d", httpCalls)
 	}
 
-	// Second call — must use cache, no additional HTTP request.
+	// Verify retry-after file was written.
+	if _, statErr := os.Stat(RetryAfterPath); statErr != nil {
+		t.Fatal("expected retry-after file to be written")
+	}
+
+	// Second call — retry-after active, no HTTP request.
 	data, err = Fetch()
 	if err != nil {
 		t.Fatalf("second Fetch failed: %v", err)
@@ -384,15 +482,94 @@ func TestFetchErrorResponseCached(t *testing.T) {
 	}
 }
 
-func TestFetchNoToken(t *testing.T) {
+func TestFetchRateLimitedNotCachedInMainCache(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
+	origRetryPath := RetryAfterPath
 	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
 
 	defer func() {
 		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       []byte(`{"error":{"type":"rate_limit_error"}}`),
+			Header:     http.Header{"Retry-After": []string{"6"}},
+		}, nil
+	}
+
+	_, _ = Fetch()
+
+	// Main cache should NOT contain the error response.
+	if _, statErr := os.Stat(CachePath); statErr == nil {
+		t.Error("429 response should not be written to main cache")
+	}
+}
+
+func TestFetchAuthErrorNotCached(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	httpCalls := 0
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		httpCalls++
+
+		return &httpclient.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       []byte(`{"error":{"type":"authentication_error"}}`),
+		}, nil
+	}
+
+	data, _ := Fetch()
+	if data.ErrorType != "authentication_error" {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, "authentication_error")
+	}
+
+	// Second call — should hit API again (not cached).
+	_, _ = Fetch()
+
+	if httpCalls != 2 {
+		t.Errorf("expected 2 HTTP calls (auth errors not cached), got %d", httpCalls)
+	}
+}
+
+func TestFetchNoToken(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origToken := keychain.GetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
 		keychain.GetFn = origToken
 	}()
 
@@ -407,19 +584,22 @@ func TestFetchNoToken(t *testing.T) {
 func TestFetchHTTPError(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
+	origRetryPath := RetryAfterPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
 
 	defer func() {
 		CachePath = origPath
+		RetryAfterPath = origRetryPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
 		return nil, errTest
 	}
 
@@ -432,13 +612,16 @@ func TestFetchHTTPError(t *testing.T) {
 func TestFetchSuccess(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
+	origRetryPath := RetryAfterPath
 	origToken := keychain.GetFn
 	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
 
 	defer func() {
 		CachePath = origPath
+		RetryAfterPath = origRetryPath
 		keychain.GetFn = origToken
 		HTTPGetFn = origHTTP
 	}()
@@ -446,8 +629,11 @@ func TestFetchSuccess(t *testing.T) {
 	resetsAt := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{"five_hour":{"utilization":30,"resets_at":"` + resetsAt + `"}}`), nil
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`{"five_hour":{"utilization":30,"resets_at":"` + resetsAt + `"}}`),
+		}, nil
 	}
 
 	data, err := Fetch()

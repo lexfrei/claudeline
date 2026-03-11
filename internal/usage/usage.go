@@ -3,6 +3,8 @@ package usage
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/cache"
@@ -20,6 +22,8 @@ const (
 	exhaustedThresholdPct = 99
 
 	halfRound = 0.5
+
+	retryAfterBuffer = 5 * time.Second
 )
 
 // CacheTTL is the cache duration for usage data. Configurable at startup.
@@ -31,6 +35,9 @@ var CachePath = "/tmp/claude-usage-cache.json"
 // LastGoodCachePath stores the last successful API response. Replaceable for testing.
 var LastGoodCachePath = "/tmp/claude-usage-last-good.json"
 
+// RetryAfterPath stores the retry-after deadline. Replaceable for testing.
+var RetryAfterPath = "/tmp/claude-usage-retry-after"
+
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
 
@@ -40,12 +47,16 @@ func Fetch() (*Data, error) {
 		return ParseBody(cached)
 	}
 
+	if retryAfterActive() {
+		return &Data{ErrorType: "rate_limit_error"}, nil
+	}
+
 	token, err := keychain.GetFn()
 	if err != nil {
 		return nil, fmt.Errorf("getting oauth token: %w", err)
 	}
 
-	body, err := HTTPGetFn(apiURL, map[string]string{
+	resp, err := HTTPGetFn(apiURL, map[string]string{
 		"Authorization":  "Bearer " + token,
 		"anthropic-beta": "oauth-2025-04-20",
 	}, apiTimeout)
@@ -53,9 +64,55 @@ func Fetch() (*Data, error) {
 		return nil, fmt.Errorf("fetching usage: %w", err)
 	}
 
-	cache.Write(CachePath, body)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		writeRetryAfter(resp.Header)
 
-	return ParseBody(body)
+		return ParseBody(resp.Body)
+	}
+
+	// Only cache successful responses.
+	if resp.StatusCode == http.StatusOK {
+		cache.Write(CachePath, resp.Body)
+	}
+
+	return ParseBody(resp.Body)
+}
+
+// retryAfterActive returns true if a retry-after deadline is set and has not passed.
+func retryAfterActive() bool {
+	data, ok := cache.ReadAny(RetryAfterPath)
+	if !ok {
+		return false
+	}
+
+	deadline, err := time.Parse(time.RFC3339, string(data))
+	if err != nil {
+		return false
+	}
+
+	return time.Now().UTC().Before(deadline)
+}
+
+// writeRetryAfter stores a retry-after deadline computed from the Retry-After header.
+func writeRetryAfter(header http.Header) {
+	seconds := parseRetryAfterSeconds(header)
+	deadline := time.Now().UTC().Add(time.Duration(seconds)*time.Second + retryAfterBuffer)
+	cache.Write(RetryAfterPath, []byte(deadline.Format(time.RFC3339)))
+}
+
+// parseRetryAfterSeconds extracts the number of seconds from a Retry-After header.
+func parseRetryAfterSeconds(header http.Header) int {
+	val := header.Get("Retry-After")
+	if val == "" {
+		return 0
+	}
+
+	seconds, err := strconv.Atoi(val)
+	if err != nil {
+		return 0
+	}
+
+	return seconds
 }
 
 // ParseBody parses the usage API response body.
