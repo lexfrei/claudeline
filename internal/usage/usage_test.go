@@ -314,14 +314,19 @@ func TestParseRetryAfterSeconds(t *testing.T) {
 			expected: 6,
 		},
 		{
-			name:     "missing header",
-			header:   http.Header{},
+			name:     "zero seconds",
+			header:   http.Header{"Retry-After": []string{"0"}},
 			expected: 0,
 		},
 		{
-			name:     "non-numeric value",
+			name:     "missing header uses default",
+			header:   http.Header{},
+			expected: defaultRetryAfterSeconds,
+		},
+		{
+			name:     "non-numeric value uses default",
 			header:   http.Header{"Retry-After": []string{"Wed, 11 Mar 2026 18:44:10 GMT"}},
-			expected: 0,
+			expected: defaultRetryAfterSeconds,
 		},
 	}
 
@@ -611,6 +616,65 @@ func TestHashTokenIrreversible(t *testing.T) {
 	// Different input produces different hash.
 	if hashToken("other-token") == hashed {
 		t.Error("expected different hash for different token")
+	}
+}
+
+func TestAuthFailExpiresByTTL(t *testing.T) {
+	dir := t.TempDir()
+	origPath := AuthFailPath
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() { AuthFailPath = origPath }()
+
+	token := "some-token"
+
+	// Write auth-failed file with old mtime (older than authFailTTL).
+	writeAuthFailed(token)
+
+	past := time.Now().Add(-authFailTTL - 1*time.Minute)
+
+	err := os.Chtimes(AuthFailPath, past, past)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should return false — file is too old.
+	if authFailedForToken(token) {
+		t.Error("expected false after TTL expiry")
+	}
+}
+
+func TestFetchUnexpectedStatusCode(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       []byte(`server error`),
+		}, nil
+	}
+
+	_, err := Fetch()
+	if err == nil {
+		t.Error("expected error for unexpected status code")
 	}
 }
 

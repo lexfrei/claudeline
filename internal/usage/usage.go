@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,6 +16,9 @@ import (
 	"github.com/lexfrei/claudeline/internal/keychain"
 )
 
+// ErrUnexpectedStatus is returned when the usage API returns a non-200/401/429 status code.
+var ErrUnexpectedStatus = errors.New("unexpected status from usage API")
+
 const (
 	apiURL     = "https://api.anthropic.com/api/oauth/usage"
 	apiTimeout = 3 * time.Second
@@ -25,7 +29,9 @@ const (
 
 	halfRound = 0.5
 
-	retryAfterBuffer = 5 * time.Second
+	retryAfterBuffer         = 5 * time.Second
+	defaultRetryAfterSeconds = 30
+	authFailTTL              = 1 * time.Hour
 )
 
 // CacheTTL is the cache duration for usage data. Configurable at startup.
@@ -85,10 +91,11 @@ func Fetch() (*Data, error) {
 		return ParseBody(resp.Body)
 	}
 
-	// Only cache successful responses.
-	if resp.StatusCode == http.StatusOK {
-		cache.Write(CachePath, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
 	}
+
+	cache.Write(CachePath, resp.Body)
 
 	return ParseBody(resp.Body)
 }
@@ -109,6 +116,8 @@ func retryAfterActive() bool {
 }
 
 // writeRetryAfter stores a retry-after deadline computed from the Retry-After header.
+// If the header is missing or unparseable, defaultRetryAfterSeconds is used.
+// A retryAfterBuffer is always added on top of the parsed value.
 func writeRetryAfter(header http.Header) {
 	seconds := parseRetryAfterSeconds(header)
 	deadline := time.Now().UTC().Add(time.Duration(seconds)*time.Second + retryAfterBuffer)
@@ -116,23 +125,26 @@ func writeRetryAfter(header http.Header) {
 }
 
 // parseRetryAfterSeconds extracts the number of seconds from a Retry-After header.
+// Returns defaultRetryAfterSeconds if the header is missing or not a valid integer.
+// Note: HTTP-date format (RFC 7231) is intentionally not supported; the Anthropic API
+// uses integer seconds in practice.
 func parseRetryAfterSeconds(header http.Header) int {
 	val := header.Get("Retry-After")
 	if val == "" {
-		return 0
+		return defaultRetryAfterSeconds
 	}
 
 	seconds, err := strconv.Atoi(val)
 	if err != nil {
-		return 0
+		return defaultRetryAfterSeconds
 	}
 
 	return seconds
 }
 
-// authFailedForToken returns true if the given token previously received a 401.
+// authFailedForToken returns true if the given token received a 401 within authFailTTL.
 func authFailedForToken(token string) bool {
-	data, ok := cache.ReadAny(AuthFailPath)
+	data, ok := cache.Read(AuthFailPath, authFailTTL)
 	if !ok {
 		return false
 	}
