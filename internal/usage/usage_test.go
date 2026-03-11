@@ -678,18 +678,271 @@ func TestFetchUnexpectedStatusCode(t *testing.T) {
 	}
 }
 
-func TestFetchNoToken(t *testing.T) {
+// Tests below use real API response shapes captured from production.
+// They serve as regression fixtures for the Anthropic usage API format.
+
+// Real 429 response from api.anthropic.com/api/oauth/usage.
+// Headers: HTTP/2 429, retry-after: 6, content-type: application/json.
+const real429Body = `{"error":{"type":"rate_limit_error","message":"Rate limited. Please try again later."}}`
+
+// Real 401 response from api.anthropic.com/api/oauth/usage.
+// Headers: HTTP/2 401, x-should-retry: false, content-type: application/json.
+const real401Body = `{"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired. Please obtain a new token or refresh your existing token.","details":{"error_visibility":"user_facing","error_code":"token_expired"}},"request_id":"req_011CYwnYqWfPFkeKDkDmyKqs"}`
+
+// Real 200 response from api.anthropic.com/api/oauth/usage.
+// Headers: HTTP/2 200, content-type: application/json.
+const real200Body = `{"five_hour":{"utilization":0.0,"resets_at":null},"seven_day":{"utilization":99.0,"resets_at":"2026-03-11T19:00:00.536264+00:00"},"seven_day_oauth_apps":null,"seven_day_opus":null,"seven_day_sonnet":{"utilization":2.0,"resets_at":"2026-03-12T11:00:00.536285+00:00"},"seven_day_cowork":null,"iguana_necktie":null,"extra_usage":{"is_enabled":false,"monthly_limit":null,"used_credits":null,"utilization":null}}`
+
+func TestFetchRateLimitedWithNonJSONBody(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
 	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
 	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
 
 	CachePath = filepath.Join(dir, "usage-cache.json")
 	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
 
 	defer func() {
 		CachePath = origPath
 		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       []byte(`Rate limited. Please try again later.`),
+			Header:     http.Header{"Retry-After": []string{"10"}},
+		}, nil
+	}
+
+	data, err := Fetch()
+	if err != nil {
+		t.Fatalf("expected no error for 429, got: %v", err)
+	}
+
+	if data.ErrorType != rateLimitType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, rateLimitType)
+	}
+}
+
+func TestFetchAuthErrorWithNonJSONBody(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       []byte(`Unauthorized`),
+		}, nil
+	}
+
+	data, err := Fetch()
+	if err != nil {
+		t.Fatalf("expected no error for 401, got: %v", err)
+	}
+
+	if data.ErrorType != authErrorType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, authErrorType)
+	}
+}
+
+func TestFetchWithReal429Response(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       []byte(real429Body),
+			Header: http.Header{
+				"Content-Type":            []string{"application/json"},
+				"Retry-After":             []string{"6"},
+				"Cache-Control":           []string{"private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0"},
+				"Referrer-Policy":         []string{"same-origin"},
+				"X-Frame-Options":         []string{"SAMEORIGIN"},
+				"Content-Security-Policy": []string{"default-src 'none'; frame-ancestors 'none'"},
+				"X-Robots-Tag":            []string{"none"},
+			},
+		}, nil
+	}
+
+	data, err := Fetch()
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+
+	if data.ErrorType != rateLimitType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, rateLimitType)
+	}
+}
+
+func TestFetchWithReal401Response(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       []byte(real401Body),
+			Header: http.Header{
+				"Content-Type":            []string{"application/json"},
+				"X-Should-Retry":          []string{"false"},
+				"Request-Id":              []string{"req_011CYwnYqWfPFkeKDkDmyKqs"},
+				"Content-Security-Policy": []string{"default-src 'none'; frame-ancestors 'none'"},
+				"X-Robots-Tag":            []string{"none"},
+			},
+		}, nil
+	}
+
+	data, err := Fetch()
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+
+	if data.ErrorType != authErrorType {
+		t.Errorf("ErrorType = %q, want %q", data.ErrorType, authErrorType)
+	}
+}
+
+func TestFetchWithReal200Response(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origLastGood := LastGoodCachePath
+	origToken := keychain.GetFn
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+	LastGoodCachePath = filepath.Join(dir, "last-good.json")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		LastGoodCachePath = origLastGood
+		keychain.GetFn = origToken
+		HTTPGetFn = origHTTP
+	}()
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(real200Body),
+			Header: http.Header{
+				"Content-Type":              []string{"application/json"},
+				"Request-Id":                []string{"req_011CYwnbPgEDyqe7p3VQohKX"},
+				"Anthropic-Organization-Id": []string{"71f33990-619b-49dd-9175-8df9803e8b59"},
+				"Content-Security-Policy":   []string{"default-src 'none'; frame-ancestors 'none'"},
+				"X-Robots-Tag":              []string{"none"},
+			},
+		}, nil
+	}
+
+	data, err := Fetch()
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+
+	if data.ErrorType != "" {
+		t.Errorf("expected no error, got ErrorType = %q", data.ErrorType)
+	}
+
+	if data.SevenDay == nil {
+		t.Fatal("expected SevenDay to be set")
+	}
+
+	if int(data.SevenDay.Utilization+halfRound) != 99 {
+		t.Errorf("SevenDay utilization = %.1f, want ~99", data.SevenDay.Utilization)
+	}
+
+	// five_hour has resets_at: null — should produce nil window.
+	if data.FiveHour != nil {
+		t.Error("expected FiveHour to be nil (resets_at is null)")
+	}
+
+	// Extra usage is disabled.
+	if data.Extra != nil {
+		t.Error("expected Extra to be nil (is_enabled: false)")
+	}
+}
+
+func TestFetchNoToken(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origToken := keychain.GetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
 		keychain.GetFn = origToken
 	}()
 

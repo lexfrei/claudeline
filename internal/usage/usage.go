@@ -82,13 +82,13 @@ func Fetch() (*Data, error) {
 	if resp.StatusCode == http.StatusTooManyRequests {
 		writeRetryAfter(resp.Header)
 
-		return ParseBody(resp.Body)
+		return &Data{ErrorType: "rate_limit_error"}, nil
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		writeAuthFailed(token)
 
-		return ParseBody(resp.Body)
+		return &Data{ErrorType: "authentication_error"}, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
