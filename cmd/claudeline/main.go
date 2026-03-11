@@ -192,6 +192,17 @@ func appendStaleQuotaSegments(segments []string) []string {
 	return segments
 }
 
+func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
+	lastGood := usage.FetchLastGood()
+	segments = append(segments, usage.FormatRateLimitSegment(usage.ExhaustedResetMinutes(lastGood)))
+
+	if cfg.Segments.Quota {
+		segments = appendStaleQuotaSegments(segments)
+	}
+
+	return segments
+}
+
 func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	usageData, err := usage.Fetch()
 	if err != nil {
@@ -206,11 +217,7 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	case "":
 		// no error, continue
 	case "rate_limit_error":
-		if cfg.Segments.Quota {
-			segments = appendStaleQuotaSegments(segments)
-		}
-
-		return segments
+		return appendRateLimitSegments(segments, cfg)
 	default:
 		return append(segments, "⚠️ /login needed")
 	}

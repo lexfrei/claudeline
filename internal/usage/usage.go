@@ -17,6 +17,7 @@ const (
 
 	fiveHourWindowMinutes = 300
 	sevenDayWindowMinutes = 10_080
+	exhaustedThresholdPct = 99
 
 	halfRound = 0.5
 )
@@ -139,4 +140,41 @@ func FormatQuotaWindow(win *QuotaWindow, label string) string {
 	dur := fmtutil.Duration(win.RemainingMinutes)
 
 	return fmt.Sprintf("%s %s: %d%% (%s)", indicator, label, pct, dur)
+}
+
+// FormatRateLimitSegment formats the explicit exhausted-limit segment.
+func FormatRateLimitSegment(minutes int) string {
+	if minutes <= 0 {
+		return "⛔ limit hit"
+	}
+
+	return fmt.Sprintf("⛔ limit hit (%s)", fmtutil.Duration(minutes))
+}
+
+// ExhaustedResetMinutes returns the reset time for the most saturated active window.
+func ExhaustedResetMinutes(data *Data) int {
+	if data == nil {
+		return 0
+	}
+
+	bestPct := -1
+	bestMinutes := 0
+
+	for _, win := range []*QuotaWindow{data.FiveHour, data.SevenDay} {
+		if win == nil || win.RemainingMinutes <= 0 {
+			continue
+		}
+
+		pct := int(win.Utilization + halfRound)
+		if pct < exhaustedThresholdPct {
+			continue
+		}
+
+		if pct > bestPct || (pct == bestPct && (bestMinutes == 0 || win.RemainingMinutes < bestMinutes)) {
+			bestPct = pct
+			bestMinutes = win.RemainingMinutes
+		}
+	}
+
+	return bestMinutes
 }

@@ -28,6 +28,7 @@ func setupTestEnv(t *testing.T) func() {
 
 	origStatusPath := status.CachePath
 	origUsagePath := usage.CachePath
+	origLastGoodPath := usage.LastGoodCachePath
 	origStatusHTTP := status.HTTPGetFn
 	origUsageHTTP := usage.HTTPGetFn
 	origToken := keychain.GetFn
@@ -36,10 +37,12 @@ func setupTestEnv(t *testing.T) func() {
 
 	status.CachePath = filepath.Join(dir, "status-cache.json")
 	usage.CachePath = filepath.Join(dir, "usage-cache.json")
+	usage.LastGoodCachePath = filepath.Join(dir, "usage-last-good.json")
 
 	return func() {
 		status.CachePath = origStatusPath
 		usage.CachePath = origUsagePath
+		usage.LastGoodCachePath = origLastGoodPath
 		status.HTTPGetFn = origStatusHTTP
 		usage.HTTPGetFn = origUsageHTTP
 		keychain.GetFn = origToken
@@ -188,6 +191,16 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
 
+	resetsAt := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
+
+	err := os.WriteFile(usage.LastGoodCachePath, []byte(`{
+		"five_hour": {"utilization": 42, "resets_at": "`+resetsAt+`"},
+		"seven_day": {"utilization": 99, "resets_at": "`+resetsAt+`"}
+	}`), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	keychain.GetFn = func() (string, error) { return testToken, nil }
 	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
 		return []byte(`{"error":{"type":"rate_limit_error"}}`), nil
@@ -200,8 +213,12 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 		t.Errorf("rate_limit_error should not show login needed, got %q", joined)
 	}
 
-	if !strings.Contains(joined, "?%") {
-		t.Errorf("expected placeholder segments, got %q", joined)
+	if !strings.Contains(joined, "⛔ limit hit") {
+		t.Errorf("expected explicit rate-limit segment, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "7d: ?%") {
+		t.Errorf("expected stale quota segments, got %q", joined)
 	}
 }
 

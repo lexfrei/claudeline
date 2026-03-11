@@ -170,6 +170,25 @@ func TestFormatQuotaWindow(t *testing.T) {
 	}
 }
 
+func TestExhaustedResetMinutes(t *testing.T) {
+	t.Parallel()
+
+	got := ExhaustedResetMinutes(&Data{
+		FiveHour: &QuotaWindow{
+			Utilization:      88,
+			RemainingMinutes: 45,
+		},
+		SevenDay: &QuotaWindow{
+			Utilization:      99,
+			RemainingMinutes: 125,
+		},
+	})
+
+	if got != 125 {
+		t.Fatalf("ExhaustedResetMinutes = %d, want %d", got, 125)
+	}
+}
+
 // Tests below mutate package-level vars and cannot run in parallel.
 
 func TestFetchCached(t *testing.T) {
