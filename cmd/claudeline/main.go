@@ -194,7 +194,7 @@ func appendStaleQuotaSegments(segments []string) []string {
 
 func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
 	lastGood := usage.FetchLastGood()
-	segments = append(segments, usage.FormatRateLimitSegment(usage.ExhaustedResetMinutes(lastGood)))
+	segments = append(segments, usage.FormatRateLimitSegment(usage.FindExhaustedWindow(lastGood)))
 
 	if cfg.Segments.Quota {
 		segments = appendStaleQuotaSegments(segments)

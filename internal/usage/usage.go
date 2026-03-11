@@ -143,38 +143,56 @@ func FormatQuotaWindow(win *QuotaWindow, label string) string {
 }
 
 // FormatRateLimitSegment formats the explicit exhausted-limit segment.
-func FormatRateLimitSegment(minutes int) string {
-	if minutes <= 0 {
+func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
+	if exhausted == nil {
 		return "⛔ limit hit"
 	}
 
-	return fmt.Sprintf("⛔ limit hit (%s)", fmtutil.Duration(minutes))
-}
-
-// ExhaustedResetMinutes returns the reset time for the most saturated active window.
-func ExhaustedResetMinutes(data *Data) int {
-	if data == nil {
-		return 0
+	if exhausted.Minutes <= 0 {
+		return fmt.Sprintf("⛔ %s limit hit", exhausted.Name)
 	}
 
-	bestPct := -1
-	bestMinutes := 0
+	return fmt.Sprintf("⛔ %s limit hit (%s)", exhausted.Name, fmtutil.Duration(exhausted.Minutes))
+}
 
-	for _, win := range []*QuotaWindow{data.FiveHour, data.SevenDay} {
-		if win == nil || win.RemainingMinutes <= 0 {
+// ExhaustedWindow returns the most saturated active window that is exhausted.
+func FindExhaustedWindow(data *Data) *ExhaustedWindow {
+	if data == nil {
+		return nil
+	}
+
+	type windowEntry struct {
+		win  *QuotaWindow
+		name string
+	}
+
+	windows := []windowEntry{
+		{data.FiveHour, "5h"},
+		{data.SevenDay, "7d"},
+	}
+
+	var best *ExhaustedWindow
+
+	bestPct := -1
+
+	for _, entry := range windows {
+		if entry.win == nil || entry.win.RemainingMinutes <= 0 {
 			continue
 		}
 
-		pct := int(win.Utilization + halfRound)
+		pct := int(entry.win.Utilization + halfRound)
 		if pct < exhaustedThresholdPct {
 			continue
 		}
 
-		if pct > bestPct || (pct == bestPct && (bestMinutes == 0 || win.RemainingMinutes < bestMinutes)) {
+		if pct > bestPct || (pct == bestPct && (best == nil || entry.win.RemainingMinutes < best.Minutes)) {
 			bestPct = pct
-			bestMinutes = win.RemainingMinutes
+			best = &ExhaustedWindow{
+				Name:    entry.name,
+				Minutes: entry.win.RemainingMinutes,
+			}
 		}
 	}
 
-	return bestMinutes
+	return best
 }

@@ -213,8 +213,8 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 		t.Errorf("rate_limit_error should not show login needed, got %q", joined)
 	}
 
-	if !strings.Contains(joined, "⛔ limit hit") {
-		t.Errorf("expected explicit rate-limit segment, got %q", joined)
+	if !strings.Contains(joined, "⛔ 7d limit hit") {
+		t.Errorf("expected explicit rate-limit segment with window name, got %q", joined)
 	}
 
 	if !strings.Contains(joined, "7d: ?%") {
