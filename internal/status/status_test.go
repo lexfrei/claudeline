@@ -2,10 +2,13 @@ package status
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/lexfrei/claudeline/internal/httpclient"
 )
 
 var errTest = errors.New("test error")
@@ -40,8 +43,11 @@ func TestFetchAlertFromAPI(t *testing.T) {
 		HTTPGetFn = origHTTP
 	}()
 
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{"status":{"indicator":"minor"}}`), nil
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`{"status":{"indicator":"minor"}}`),
+		}, nil
 	}
 
 	got := FetchAlert()
@@ -62,8 +68,11 @@ func TestFetchAlertNone(t *testing.T) {
 		HTTPGetFn = origHTTP
 	}()
 
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{"status":{"indicator":"none"}}`), nil
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`{"status":{"indicator":"none"}}`),
+		}, nil
 	}
 
 	got := FetchAlert()
@@ -84,7 +93,7 @@ func TestFetchAlertHTTPError(t *testing.T) {
 		HTTPGetFn = origHTTP
 	}()
 
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
 		return nil, errTest
 	}
 
@@ -106,12 +115,40 @@ func TestFetchAlertBadJSON(t *testing.T) {
 		HTTPGetFn = origHTTP
 	}()
 
-	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`not json`), nil
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`not json`),
+		}, nil
 	}
 
 	got := FetchAlert()
 	if got != "" {
 		t.Errorf("expected empty on bad JSON, got %q", got)
+	}
+}
+
+func TestFetchAlertNonOKStatus(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "status-cache.json")
+
+	defer func() {
+		CachePath = origPath
+		HTTPGetFn = origHTTP
+	}()
+
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       []byte(`server error`),
+		}, nil
+	}
+
+	got := FetchAlert()
+	if got != "" {
+		t.Errorf("expected empty on non-OK status, got %q", got)
 	}
 }

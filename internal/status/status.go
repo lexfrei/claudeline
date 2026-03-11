@@ -3,6 +3,7 @@ package status
 
 import (
 	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/cache"
@@ -41,8 +42,14 @@ func FetchAlert() string {
 		return string(cached)
 	}
 
-	body, err := HTTPGetFn(apiURL, nil, apiTimeout)
+	httpResp, err := HTTPGetFn(apiURL, nil, apiTimeout)
 	if err != nil {
+		cache.Write(CachePath, nil)
+
+		return ""
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
 		cache.Write(CachePath, nil)
 
 		return ""
@@ -50,7 +57,7 @@ func FetchAlert() string {
 
 	var resp apiResponse
 
-	unmarshalErr := json.Unmarshal(body, &resp)
+	unmarshalErr := json.Unmarshal(httpResp.Body, &resp)
 	if unmarshalErr != nil {
 		cache.Write(CachePath, nil)
 

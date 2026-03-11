@@ -19,13 +19,42 @@ func TestGet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	body, err := Get(srv.URL, map[string]string{"X-Test": "hello"}, 5*time.Second)
+	resp, err := Get(srv.URL, map[string]string{"X-Test": "hello"}, 5*time.Second)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
 
-	if string(body) != `{"ok":true}` {
-		t.Errorf("unexpected body: %q", body)
+	if string(resp.Body) != `{"ok":true}` {
+		t.Errorf("unexpected body: %q", resp.Body)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+}
+
+func TestGetReturnsStatusCode(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "10")
+		w.WriteHeader(http.StatusTooManyRequests)
+
+		_, _ = w.Write([]byte(`{"error":{"type":"rate_limit_error"}}`))
+	}))
+	defer srv.Close()
+
+	resp, err := Get(srv.URL, nil, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d", resp.StatusCode)
+	}
+
+	if resp.Header.Get("Retry-After") != "10" {
+		t.Errorf("expected Retry-After header, got %q", resp.Header.Get("Retry-After"))
 	}
 }
 
@@ -37,13 +66,13 @@ func TestGetNoHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	body, err := Get(srv.URL, nil, 5*time.Second)
+	resp, err := Get(srv.URL, nil, 5*time.Second)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
 
-	if string(body) != "ok" {
-		t.Errorf("unexpected body: %q", body)
+	if string(resp.Body) != "ok" {
+		t.Errorf("unexpected body: %q", resp.Body)
 	}
 }
 

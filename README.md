@@ -10,7 +10,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 
 ## Known limitations
 
-The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per [Valve Time](https://developer.valvesoftware.com/wiki/Valve_Time) window before it starts returning HTTP 429. claudeline caches **usage API responses** (both successful and error) for **10 minutes** by default to stay within this budget. Other data (model, cost, context) comes from Claude Code stdin and is always fresh. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
+The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per [Valve Time](https://developer.valvesoftware.com/wiki/Valve_Time) window before it starts returning HTTP 429. claudeline caches **successful** usage API responses for **10 minutes** by default to stay within this budget. Error responses are handled separately: HTTP 429 respects the server's `Retry-After` header (plus a 5-second buffer), and HTTP 401 is cached by token hash until the token changes (e.g., after `claude login`). Other data (model, cost, context) comes from Claude Code stdin and is always fresh. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
 
 ## Example output
 

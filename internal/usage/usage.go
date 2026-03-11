@@ -1,8 +1,13 @@
 package usage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/cache"
@@ -10,6 +15,9 @@ import (
 	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
 )
+
+// ErrUnexpectedStatus is returned when the usage API returns a non-200/401/429 status code.
+var ErrUnexpectedStatus = errors.New("unexpected status from usage API")
 
 const (
 	apiURL     = "https://api.anthropic.com/api/oauth/usage"
@@ -20,6 +28,10 @@ const (
 	exhaustedThresholdPct = 99
 
 	halfRound = 0.5
+
+	retryAfterBuffer         = 5 * time.Second
+	defaultRetryAfterSeconds = 30
+	authFailTTL              = 1 * time.Hour
 )
 
 // CacheTTL is the cache duration for usage data. Configurable at startup.
@@ -31,6 +43,12 @@ var CachePath = "/tmp/claude-usage-cache.json"
 // LastGoodCachePath stores the last successful API response. Replaceable for testing.
 var LastGoodCachePath = "/tmp/claude-usage-last-good.json"
 
+// RetryAfterPath stores the retry-after deadline. Replaceable for testing.
+var RetryAfterPath = "/tmp/claude-usage-retry-after"
+
+// AuthFailPath stores the token hash of the last authentication failure. Replaceable for testing.
+var AuthFailPath = "/tmp/claude-usage-auth-failed"
+
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
 
@@ -40,12 +58,20 @@ func Fetch() (*Data, error) {
 		return ParseBody(cached)
 	}
 
+	if retryAfterActive() {
+		return &Data{ErrorType: "rate_limit_error"}, nil
+	}
+
 	token, err := keychain.GetFn()
 	if err != nil {
 		return nil, fmt.Errorf("getting oauth token: %w", err)
 	}
 
-	body, err := HTTPGetFn(apiURL, map[string]string{
+	if authFailedForToken(token) {
+		return &Data{ErrorType: "authentication_error"}, nil
+	}
+
+	resp, err := HTTPGetFn(apiURL, map[string]string{
 		"Authorization":  "Bearer " + token,
 		"anthropic-beta": "oauth-2025-04-20",
 	}, apiTimeout)
@@ -53,9 +79,89 @@ func Fetch() (*Data, error) {
 		return nil, fmt.Errorf("fetching usage: %w", err)
 	}
 
-	cache.Write(CachePath, body)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		writeRetryAfter(resp.Header)
 
-	return ParseBody(body)
+		return &Data{ErrorType: "rate_limit_error"}, nil
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		writeAuthFailed(token)
+
+		return &Data{ErrorType: "authentication_error"}, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
+	}
+
+	cache.Write(CachePath, resp.Body)
+
+	return ParseBody(resp.Body)
+}
+
+// retryAfterActive returns true if a retry-after deadline is set and has not passed.
+func retryAfterActive() bool {
+	data, ok := cache.ReadAny(RetryAfterPath)
+	if !ok {
+		return false
+	}
+
+	deadline, err := time.Parse(time.RFC3339, string(data))
+	if err != nil {
+		return false
+	}
+
+	return time.Now().UTC().Before(deadline)
+}
+
+// writeRetryAfter stores a retry-after deadline computed from the Retry-After header.
+// If the header is missing or unparseable, defaultRetryAfterSeconds is used.
+// A retryAfterBuffer is always added on top of the parsed value.
+func writeRetryAfter(header http.Header) {
+	seconds := parseRetryAfterSeconds(header)
+	deadline := time.Now().UTC().Add(time.Duration(seconds)*time.Second + retryAfterBuffer)
+	cache.Write(RetryAfterPath, []byte(deadline.Format(time.RFC3339)))
+}
+
+// parseRetryAfterSeconds extracts the number of seconds from a Retry-After header.
+// Returns defaultRetryAfterSeconds if the header is missing or not a valid integer.
+// Note: HTTP-date format (RFC 7231) is intentionally not supported; the Anthropic API
+// uses integer seconds in practice.
+func parseRetryAfterSeconds(header http.Header) int {
+	val := header.Get("Retry-After")
+	if val == "" {
+		return defaultRetryAfterSeconds
+	}
+
+	seconds, err := strconv.Atoi(val)
+	if err != nil {
+		return defaultRetryAfterSeconds
+	}
+
+	return max(seconds, 0)
+}
+
+// authFailedForToken returns true if the given token received a 401 within authFailTTL.
+func authFailedForToken(token string) bool {
+	data, ok := cache.Read(AuthFailPath, authFailTTL)
+	if !ok {
+		return false
+	}
+
+	return string(data) == hashToken(token)
+}
+
+// writeAuthFailed stores the hash of the token that got a 401 response.
+func writeAuthFailed(token string) {
+	cache.Write(AuthFailPath, []byte(hashToken(token)))
+}
+
+// hashToken returns a hex-encoded SHA-256 hash of the token.
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+
+	return hex.EncodeToString(h[:])
 }
 
 // ParseBody parses the usage API response body.
