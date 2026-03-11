@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/config"
+	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
@@ -29,6 +31,7 @@ func setupTestEnv(t *testing.T) func() {
 	origStatusPath := status.CachePath
 	origUsagePath := usage.CachePath
 	origLastGoodPath := usage.LastGoodCachePath
+	origRetryAfterPath := usage.RetryAfterPath
 	origStatusHTTP := status.HTTPGetFn
 	origUsageHTTP := usage.HTTPGetFn
 	origToken := keychain.GetFn
@@ -38,11 +41,13 @@ func setupTestEnv(t *testing.T) func() {
 	status.CachePath = filepath.Join(dir, "status-cache.json")
 	usage.CachePath = filepath.Join(dir, "usage-cache.json")
 	usage.LastGoodCachePath = filepath.Join(dir, "usage-last-good.json")
+	usage.RetryAfterPath = filepath.Join(dir, "retry-after")
 
 	return func() {
 		status.CachePath = origStatusPath
 		usage.CachePath = origUsagePath
 		usage.LastGoodCachePath = origLastGoodPath
+		usage.RetryAfterPath = origRetryAfterPath
 		status.HTTPGetFn = origStatusHTTP
 		usage.HTTPGetFn = origUsageHTTP
 		keychain.GetFn = origToken
@@ -51,7 +56,7 @@ func setupTestEnv(t *testing.T) func() {
 	}
 }
 
-func failHTTP(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
+func failHTTP(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
 	return nil, keychain.ErrNoToken
 }
 
@@ -143,8 +148,11 @@ func TestBuildStatuslineWithStatusAlert(t *testing.T) {
 	defer cleanup()
 
 	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
-	status.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{"status":{"indicator":"major"}}`), nil
+	status.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`{"status":{"indicator":"major"}}`),
+		}, nil
 	}
 	usage.HTTPGetFn = failHTTP
 
@@ -175,8 +183,11 @@ func TestAppendUsageSegmentsLoginNeeded(t *testing.T) {
 	defer cleanup()
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
-	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{"error":{"type":"authentication_error"}}`), nil
+	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       []byte(`{"error":{"type":"authentication_error"}}`),
+		}, nil
 	}
 
 	segments := appendUsageSegments(nil, defaultCfg())
@@ -202,8 +213,12 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 	}
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
-	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{"error":{"type":"rate_limit_error"}}`), nil
+	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       []byte(`{"error":{"type":"rate_limit_error"}}`),
+			Header:     http.Header{"Retry-After": []string{"6"}},
+		}, nil
 	}
 
 	segments := appendUsageSegments(nil, defaultCfg())
@@ -229,12 +244,15 @@ func TestAppendUsageSegmentsSuccess(t *testing.T) {
 	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
-	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) ([]byte, error) {
-		return []byte(`{
+	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body: []byte(`{
 			"five_hour": {"utilization": 30, "resets_at": "` + resetsAt + `"},
 			"seven_day": {"utilization": 45, "resets_at": "` + resetsAt + `"},
 			"extra_usage": {"is_enabled": true, "monthly_limit": 5000, "used_credits": 128}
-		}`), nil
+		}`),
+		}, nil
 	}
 
 	segments := appendUsageSegments(nil, defaultCfg())
