@@ -192,6 +192,7 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 	defer cleanup()
 
 	resetsAt := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
+
 	err := os.WriteFile(usage.LastGoodCachePath, []byte(`{
 		"five_hour": {"utilization": 42, "resets_at": "`+resetsAt+`"},
 		"seven_day": {"utilization": 99, "resets_at": "`+resetsAt+`"}

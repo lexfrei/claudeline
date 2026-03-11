@@ -17,6 +17,7 @@ const (
 
 	fiveHourWindowMinutes = 300
 	sevenDayWindowMinutes = 10_080
+	exhaustedThresholdPct = 99
 
 	halfRound = 0.5
 )
@@ -165,7 +166,7 @@ func ExhaustedResetMinutes(data *Data) int {
 		}
 
 		pct := int(win.Utilization + halfRound)
-		if pct < 99 {
+		if pct < exhaustedThresholdPct {
 			continue
 		}
 
