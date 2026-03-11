@@ -155,7 +155,7 @@ func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
 	return fmt.Sprintf("⛔ %s limit hit (%s)", exhausted.Name, fmtutil.Duration(exhausted.Minutes))
 }
 
-// ExhaustedWindow returns the most saturated active window that is exhausted.
+// FindExhaustedWindow returns the most saturated active window that is exhausted.
 func FindExhaustedWindow(data *Data) *ExhaustedWindow {
 	if data == nil {
 		return nil

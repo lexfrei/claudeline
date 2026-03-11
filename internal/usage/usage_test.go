@@ -282,13 +282,13 @@ func TestFormatRateLimitSegment(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := FormatRateLimitSegment(tc.input)
-			if got != tc.expected {
-				t.Errorf("FormatRateLimitSegment() = %q, want %q", got, tc.expected)
+			got := FormatRateLimitSegment(testCase.input)
+			if got != testCase.expected {
+				t.Errorf("FormatRateLimitSegment() = %q, want %q", got, testCase.expected)
 			}
 		})
 	}
