@@ -170,10 +170,10 @@ func TestFormatQuotaWindow(t *testing.T) {
 	}
 }
 
-func TestExhaustedResetMinutes(t *testing.T) {
+func TestFindExhaustedWindow(t *testing.T) {
 	t.Parallel()
 
-	got := ExhaustedResetMinutes(&Data{
+	got := FindExhaustedWindow(&Data{
 		FiveHour: &QuotaWindow{
 			Utilization:      88,
 			RemainingMinutes: 45,
@@ -184,8 +184,113 @@ func TestExhaustedResetMinutes(t *testing.T) {
 		},
 	})
 
-	if got != 125 {
-		t.Fatalf("ExhaustedResetMinutes = %d, want %d", got, 125)
+	if got == nil {
+		t.Fatal("expected non-nil ExhaustedWindow")
+	}
+
+	if got.Name != "7d" {
+		t.Errorf("Name = %q, want %q", got.Name, "7d")
+	}
+
+	if got.Minutes != 125 {
+		t.Errorf("Minutes = %d, want %d", got.Minutes, 125)
+	}
+}
+
+func TestFindExhaustedWindowFiveHour(t *testing.T) {
+	t.Parallel()
+
+	got := FindExhaustedWindow(&Data{
+		FiveHour: &QuotaWindow{
+			Utilization:      100,
+			RemainingMinutes: 30,
+		},
+		SevenDay: &QuotaWindow{
+			Utilization:      50,
+			RemainingMinutes: 125,
+		},
+	})
+
+	if got == nil {
+		t.Fatal("expected non-nil ExhaustedWindow")
+	}
+
+	if got.Name != "5h" {
+		t.Errorf("Name = %q, want %q", got.Name, "5h")
+	}
+
+	if got.Minutes != 30 {
+		t.Errorf("Minutes = %d, want %d", got.Minutes, 30)
+	}
+}
+
+func TestFindExhaustedWindowNil(t *testing.T) {
+	t.Parallel()
+
+	got := FindExhaustedWindow(nil)
+	if got != nil {
+		t.Error("expected nil for nil data")
+	}
+}
+
+func TestFindExhaustedWindowNoExhausted(t *testing.T) {
+	t.Parallel()
+
+	got := FindExhaustedWindow(&Data{
+		FiveHour: &QuotaWindow{
+			Utilization:      50,
+			RemainingMinutes: 45,
+		},
+		SevenDay: &QuotaWindow{
+			Utilization:      60,
+			RemainingMinutes: 125,
+		},
+	})
+
+	if got != nil {
+		t.Error("expected nil when no window is exhausted")
+	}
+}
+
+func TestFormatRateLimitSegment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    *ExhaustedWindow
+		expected string
+	}{
+		{
+			name:     "nil window",
+			input:    nil,
+			expected: "⛔ limit hit",
+		},
+		{
+			name:     "5h window with time",
+			input:    &ExhaustedWindow{Name: "5h", Minutes: 134},
+			expected: "⛔ 5h limit hit (2h 14m)",
+		},
+		{
+			name:     "7d window with time",
+			input:    &ExhaustedWindow{Name: "7d", Minutes: 1440},
+			expected: "⛔ 7d limit hit (1d 0h)",
+		},
+		{
+			name:     "window with zero minutes",
+			input:    &ExhaustedWindow{Name: "5h", Minutes: 0},
+			expected: "⛔ 5h limit hit",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := FormatRateLimitSegment(testCase.input)
+			if got != testCase.expected {
+				t.Errorf("FormatRateLimitSegment() = %q, want %q", got, testCase.expected)
+			}
+		})
 	}
 }
 

@@ -17,6 +17,12 @@ type ExtraUsage struct {
 	UsedCredits  float64
 }
 
+// ExhaustedWindow contains information about which rate limit window was exhausted.
+type ExhaustedWindow struct {
+	Name    string // "5h" or "7d"
+	Minutes int    // minutes until reset
+}
+
 // Data is the parsed response from Anthropic usage API.
 type Data struct {
 	FiveHour  *QuotaWindow
