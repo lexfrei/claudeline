@@ -189,6 +189,22 @@ func ParseBody(body []byte) (*Data, error) {
 		result.SevenDay = parseWindow(resp.SevenDay, sevenDayWindowMinutes)
 	}
 
+	if resp.SevenDayOpus != nil {
+		result.SevenDayOpus = parseWindow(resp.SevenDayOpus, sevenDayWindowMinutes)
+	}
+
+	if resp.SevenDaySonnet != nil {
+		result.SevenDaySonnet = parseWindow(resp.SevenDaySonnet, sevenDayWindowMinutes)
+	}
+
+	if resp.SevenDayCowork != nil {
+		result.SevenDayCowork = parseWindow(resp.SevenDayCowork, sevenDayWindowMinutes)
+	}
+
+	if resp.SevenDayOAuthApps != nil {
+		result.SevenDayOAuthApps = parseWindow(resp.SevenDayOAuthApps, sevenDayWindowMinutes)
+	}
+
 	if resp.ExtraUsage != nil && resp.ExtraUsage.IsEnabled && resp.ExtraUsage.UsedCredits > 0 {
 		result.Extra = &ExtraUsage{
 			MonthlyLimit: resp.ExtraUsage.MonthlyLimit,
@@ -262,7 +278,8 @@ func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
 }
 
 // FindExhaustedWindow returns the most saturated active window that is exhausted.
-func FindExhaustedWindow(data *Data) *ExhaustedWindow {
+// When perModel is true, per-model windows (opus, sonnet, cowork, oauth) are included.
+func FindExhaustedWindow(data *Data, perModel bool) *ExhaustedWindow {
 	if data == nil {
 		return nil
 	}
@@ -275,6 +292,15 @@ func FindExhaustedWindow(data *Data) *ExhaustedWindow {
 	windows := []windowEntry{
 		{data.FiveHour, "5h"},
 		{data.SevenDay, "7d"},
+	}
+
+	if perModel {
+		windows = append(windows,
+			windowEntry{data.SevenDayOpus, "7d-opus"},
+			windowEntry{data.SevenDaySonnet, "7d-sonnet"},
+			windowEntry{data.SevenDayCowork, "7d-cowork"},
+			windowEntry{data.SevenDayOAuthApps, "7d-oauth"},
+		)
 	}
 
 	var best *ExhaustedWindow
