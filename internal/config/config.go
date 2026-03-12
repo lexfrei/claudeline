@@ -14,13 +14,14 @@ const (
 
 // Segments controls which statusline segments are displayed.
 type Segments struct {
-	Model       bool `mapstructure:"model"`
-	Cost        bool `mapstructure:"cost"`
-	Status      bool `mapstructure:"status"`
-	Context     bool `mapstructure:"context"`
-	Compactions bool `mapstructure:"compactions"`
-	Quota       bool `mapstructure:"quota"`
-	Credits     bool `mapstructure:"credits"`
+	Model         bool `mapstructure:"model"`
+	Cost          bool `mapstructure:"cost"`
+	Status        bool `mapstructure:"status"`
+	Context       bool `mapstructure:"context"`
+	Compactions   bool `mapstructure:"compactions"`
+	Quota         bool `mapstructure:"quota"`
+	PerModelQuota bool `mapstructure:"per_model_quota"`
+	Credits       bool `mapstructure:"credits"`
 }
 
 // Cache controls cache TTL durations.
@@ -86,6 +87,7 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.context", true)
 	viperInstance.SetDefault("segments.compactions", true)
 	viperInstance.SetDefault("segments.quota", true)
+	viperInstance.SetDefault("segments.per_model_quota", false)
 	viperInstance.SetDefault("segments.credits", true)
 	viperInstance.SetDefault("cache.usage_ttl", defaultUsageTTL)
 	viperInstance.SetDefault("cache.status_ttl", defaultStatusTTL)
