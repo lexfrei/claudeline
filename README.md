@@ -33,6 +33,10 @@ The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — rough
 | 🔄 Compactions | Number of context compactions in current session |
 | 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
 | 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset |
+| 🟢/🟡/🟠/🔴 7d-opus | Per-model 7-day Opus quota (opt-in via `--per-model-quota`) |
+| 🟢/🟡/🟠/🔴 7d-sonnet | Per-model 7-day Sonnet quota (opt-in via `--per-model-quota`) |
+| 🟢/🟡/🟠/🔴 7d-cowork | Per-model 7-day cowork quota (opt-in via `--per-model-quota`) |
+| 🟢/🟡/🟠/🔴 7d-oauth | Per-model 7-day OAuth apps quota (opt-in via `--per-model-quota`) |
 | 💳 Credits | Monthly extra credit usage (only shown when active) |
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
@@ -91,6 +95,7 @@ status = true
 context = true
 compactions = true
 quota = true
+per_model_quota = false
 credits = true
 
 [cache]
@@ -109,7 +114,7 @@ claudeline --no-cost --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-credits`.
+Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--per-model-quota`, `--no-credits`.
 
 ## License
 

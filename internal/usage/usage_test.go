@@ -53,6 +53,53 @@ func TestParseBody(t *testing.T) {
 	}
 }
 
+func TestParseBodyPerModelWindows(t *testing.T) {
+	t.Parallel()
+
+	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+
+	body := []byte(`{
+		"seven_day": {"utilization": 45.2, "resets_at": "` + resetsAt + `"},
+		"seven_day_opus": {"utilization": 12.5, "resets_at": "` + resetsAt + `"},
+		"seven_day_sonnet": {"utilization": 78.9, "resets_at": "` + resetsAt + `"},
+		"seven_day_cowork": null,
+		"seven_day_oauth_apps": {"utilization": 5.0, "resets_at": "` + resetsAt + `"}
+	}`)
+
+	data, err := ParseBody(body)
+	if err != nil {
+		t.Fatalf("ParseBody failed: %v", err)
+	}
+
+	if data.SevenDayOpus == nil {
+		t.Fatal("expected SevenDayOpus to be set")
+	}
+
+	if int(data.SevenDayOpus.Utilization+halfRound) != 13 {
+		t.Errorf("SevenDayOpus utilization = %.1f, want ~12.5", data.SevenDayOpus.Utilization)
+	}
+
+	if data.SevenDaySonnet == nil {
+		t.Fatal("expected SevenDaySonnet to be set")
+	}
+
+	if int(data.SevenDaySonnet.Utilization+halfRound) != 79 {
+		t.Errorf("SevenDaySonnet utilization = %.1f, want ~78.9", data.SevenDaySonnet.Utilization)
+	}
+
+	if data.SevenDayCowork != nil {
+		t.Error("expected SevenDayCowork to be nil (null in JSON)")
+	}
+
+	if data.SevenDayOAuthApps == nil {
+		t.Fatal("expected SevenDayOAuthApps to be set")
+	}
+
+	if int(data.SevenDayOAuthApps.Utilization+halfRound) != 5 {
+		t.Errorf("SevenDayOAuthApps utilization = %.1f, want ~5.0", data.SevenDayOAuthApps.Utilization)
+	}
+}
+
 func TestParseBodyError(t *testing.T) {
 	t.Parallel()
 
@@ -188,7 +235,7 @@ func TestFindExhaustedWindow(t *testing.T) {
 			Utilization:      99,
 			RemainingMinutes: 125,
 		},
-	})
+	}, false)
 
 	if got == nil {
 		t.Fatal("expected non-nil ExhaustedWindow")
@@ -215,7 +262,7 @@ func TestFindExhaustedWindowFiveHour(t *testing.T) {
 			Utilization:      50,
 			RemainingMinutes: 125,
 		},
-	})
+	}, false)
 
 	if got == nil {
 		t.Fatal("expected non-nil ExhaustedWindow")
@@ -230,10 +277,47 @@ func TestFindExhaustedWindowFiveHour(t *testing.T) {
 	}
 }
 
+func TestFindExhaustedWindowPerModel(t *testing.T) {
+	t.Parallel()
+
+	data := &Data{
+		SevenDay: &QuotaWindow{
+			Utilization:      50,
+			RemainingMinutes: 125,
+		},
+		SevenDayOpus: &QuotaWindow{
+			Utilization:      100,
+			RemainingMinutes: 60,
+		},
+	}
+
+	// With perModel enabled, per-model window is found.
+	got := FindExhaustedWindow(data, true)
+
+	if got == nil {
+		t.Fatal("expected non-nil ExhaustedWindow")
+	}
+
+	if got.Name != "7d-opus" {
+		t.Errorf("Name = %q, want %q", got.Name, "7d-opus")
+	}
+
+	if got.Minutes != 60 {
+		t.Errorf("Minutes = %d, want %d", got.Minutes, 60)
+	}
+
+	// With perModel disabled, per-model window is ignored.
+	gotDisabled := FindExhaustedWindow(data, false)
+
+	if gotDisabled != nil {
+		t.Errorf("expected nil when perModel is false, got %+v", gotDisabled)
+	}
+}
+
 func TestFindExhaustedWindowNil(t *testing.T) {
 	t.Parallel()
 
-	got := FindExhaustedWindow(nil)
+	got := FindExhaustedWindow(nil, false)
 	if got != nil {
 		t.Error("expected nil for nil data")
 	}
@@ -251,7 +335,7 @@ func TestFindExhaustedWindowNoExhausted(t *testing.T) {
 			Utilization:      60,
 			RemainingMinutes: 125,
 		},
-	})
+	}, false)
 
 	if got != nil {
 		t.Error("expected nil when no window is exhausted")
@@ -925,6 +1009,30 @@ func TestFetchWithReal200Response(t *testing.T) {
 	// five_hour has resets_at: null — should produce nil window.
 	if data.FiveHour != nil {
 		t.Error("expected FiveHour to be nil (resets_at is null)")
+	}
+
+	// seven_day_sonnet has valid resets_at — should produce non-nil window.
+	if data.SevenDaySonnet == nil {
+		t.Fatal("expected SevenDaySonnet to be set")
+	}
+
+	if int(data.SevenDaySonnet.Utilization+halfRound) != 2 {
+		t.Errorf("SevenDaySonnet utilization = %.1f, want ~2", data.SevenDaySonnet.Utilization)
+	}
+
+	// seven_day_opus is null — should produce nil window.
+	if data.SevenDayOpus != nil {
+		t.Error("expected SevenDayOpus to be nil (null in JSON)")
+	}
+
+	// seven_day_cowork is null — should produce nil window.
+	if data.SevenDayCowork != nil {
+		t.Error("expected SevenDayCowork to be nil (null in JSON)")
+	}
+
+	// seven_day_oauth_apps is null — should produce nil window.
+	if data.SevenDayOAuthApps != nil {
+		t.Error("expected SevenDayOAuthApps to be nil (null in JSON)")
 	}
 
 	// Extra usage is disabled.

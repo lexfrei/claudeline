@@ -274,6 +274,61 @@ func TestAppendUsageSegmentsSuccess(t *testing.T) {
 	}
 }
 
+func TestAppendUsageSegmentsPerModel(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body: []byte(`{
+				"seven_day": {"utilization": 45, "resets_at": "` + resetsAt + `"},
+				"seven_day_opus": {"utilization": 12, "resets_at": "` + resetsAt + `"},
+				"seven_day_sonnet": {"utilization": 78, "resets_at": "` + resetsAt + `"},
+				"seven_day_cowork": null,
+				"seven_day_oauth_apps": {"utilization": 5, "resets_at": "` + resetsAt + `"}
+			}`),
+		}, nil
+	}
+
+	cfg := defaultCfg()
+	cfg.Segments.PerModelQuota = true
+
+	segments := appendUsageSegments(nil, cfg)
+	joined := strings.Join(segments, " | ")
+
+	if !strings.Contains(joined, "7d: 45%") {
+		t.Errorf("expected 7d quota, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "7d-opus: 12%") {
+		t.Errorf("expected 7d-opus quota, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "7d-sonnet: 78%") {
+		t.Errorf("expected 7d-sonnet quota, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "7d-oauth: 5%") {
+		t.Errorf("expected 7d-oauth quota, got %q", joined)
+	}
+
+	if strings.Contains(joined, "7d-cowork") {
+		t.Errorf("7d-cowork should not appear when null, got %q", joined)
+	}
+
+	// Verify per-model windows are hidden by default.
+	segmentsDefault := appendUsageSegments(nil, defaultCfg())
+	joinedDefault := strings.Join(segmentsDefault, " | ")
+
+	if strings.Contains(joinedDefault, "7d-opus") {
+		t.Errorf("per-model windows should be hidden by default, got %q", joinedDefault)
+	}
+}
+
 func TestBuildStatuslineNoModel(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
@@ -420,9 +475,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits"})
+	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -440,6 +495,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 
 	if cfg.Segments.Credits {
 		t.Error("expected credits disabled by flag")
+	}
+
+	if !cfg.Segments.PerModelQuota {
+		t.Error("expected per-model quota enabled by flag")
 	}
 
 	if !cfg.Segments.Cost {

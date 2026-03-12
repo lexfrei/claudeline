@@ -84,6 +84,7 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("no-context", false, "disable context segment")
 	flags.Bool("no-compactions", false, "disable compactions segment")
 	flags.Bool("no-quota", false, "disable quota segment")
+	flags.Bool("per-model-quota", false, "enable per-model quota segments (opus, sonnet, etc.)")
 	flags.Bool("no-credits", false, "disable credits segment")
 
 	return rootCmd
@@ -112,6 +113,10 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 
 	if flagSet(cmd, "no-quota") {
 		cfg.Segments.Quota = false
+	}
+
+	if flagSet(cmd, "per-model-quota") {
+		cfg.Segments.PerModelQuota = true
 	}
 
 	if flagSet(cmd, "no-credits") {
@@ -175,18 +180,35 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	return fmtutil.JoinPipe(segments)
 }
 
-func appendStaleQuotaSegments(segments []string) []string {
+func appendStaleQuotaSegments(segments []string, perModel bool) []string {
 	lastGood := usage.FetchLastGood()
 	if lastGood == nil {
 		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
 	}
 
-	if lastGood.SevenDay != nil {
-		segments = append(segments, usage.FormatStaleQuotaWindow(lastGood.SevenDay, "7d"))
+	type labeledWindow struct {
+		win   *usage.QuotaWindow
+		label string
 	}
 
-	if lastGood.FiveHour != nil {
-		segments = append(segments, usage.FormatStaleQuotaWindow(lastGood.FiveHour, "5h"))
+	windows := []labeledWindow{
+		{lastGood.SevenDay, "7d"},
+		{lastGood.FiveHour, "5h"},
+	}
+
+	if perModel {
+		windows = append(windows,
+			labeledWindow{lastGood.SevenDayOpus, "7d-opus"},
+			labeledWindow{lastGood.SevenDaySonnet, "7d-sonnet"},
+			labeledWindow{lastGood.SevenDayCowork, "7d-cowork"},
+			labeledWindow{lastGood.SevenDayOAuthApps, "7d-oauth"},
+		)
+	}
+
+	for _, w := range windows {
+		if w.win != nil {
+			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label))
+		}
 	}
 
 	return segments
@@ -194,10 +216,39 @@ func appendStaleQuotaSegments(segments []string) []string {
 
 func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
 	lastGood := usage.FetchLastGood()
-	segments = append(segments, usage.FormatRateLimitSegment(usage.FindExhaustedWindow(lastGood)))
+	segments = append(segments, usage.FormatRateLimitSegment(usage.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
 
 	if cfg.Segments.Quota {
-		segments = appendStaleQuotaSegments(segments)
+		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
+	}
+
+	return segments
+}
+
+func appendQuotaWindows(segments []string, data *usage.Data, perModel bool) []string {
+	type labeledWindow struct {
+		win   *usage.QuotaWindow
+		label string
+	}
+
+	windows := []labeledWindow{
+		{data.SevenDay, "7d"},
+		{data.FiveHour, "5h"},
+	}
+
+	if perModel {
+		windows = append(windows,
+			labeledWindow{data.SevenDayOpus, "7d-opus"},
+			labeledWindow{data.SevenDaySonnet, "7d-sonnet"},
+			labeledWindow{data.SevenDayCowork, "7d-cowork"},
+			labeledWindow{data.SevenDayOAuthApps, "7d-oauth"},
+		)
+	}
+
+	for _, w := range windows {
+		if w.win != nil {
+			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label))
+		}
 	}
 
 	return segments
@@ -207,7 +258,7 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
-			segments = appendStaleQuotaSegments(segments)
+			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
 		}
 
 		return segments
@@ -223,13 +274,7 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	}
 
 	if cfg.Segments.Quota {
-		if usageData.SevenDay != nil {
-			segments = append(segments, usage.FormatQuotaWindow(usageData.SevenDay, "7d"))
-		}
-
-		if usageData.FiveHour != nil {
-			segments = append(segments, usage.FormatQuotaWindow(usageData.FiveHour, "5h"))
-		}
+		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota)
 	}
 
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
