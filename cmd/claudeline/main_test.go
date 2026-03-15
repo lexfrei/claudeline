@@ -556,6 +556,7 @@ func TestPromoSuffix(t *testing.T) {
 		{"7d-sonnet active", "7d-sonnet", active, " ⏸"},
 		{"7d-cowork active", "7d-cowork", active, " ⏸"},
 		{"7d-oauth active", "7d-oauth", active, " ⏸"},
+		{"5h-opus hypothetical", "5h-opus", active, " 🌈"},
 		{"unknown label active", "credits", active, ""},
 		{"5h inactive", "5h", inactive, ""},
 		{"7d inactive", "7d", inactive, ""},

@@ -222,11 +222,11 @@ func TestIsOffPeakDST(t *testing.T) {
 	}
 }
 
-func TestIsOffPeakEndDatePDT(t *testing.T) {
+func TestIsOffPeakEndDateBoundary(t *testing.T) {
 	t.Parallel()
 
-	// Verify the March 2026 promo end date in PDT context.
-	// March 27 23:59 PT (PDT, UTC-7) = March 28 06:59 UTC.
+	// Verify the UTC end boundary derived from March 27 23:59 PDT (= March 28 06:59 UTC).
+	// Peak schedule location (ET) is irrelevant to end date check — End is stored in UTC.
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Skipf("tzdata not available: %v", err)

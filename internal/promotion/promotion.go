@@ -34,6 +34,7 @@ type Status struct {
 }
 
 // Current checks all known promotions and returns the current off-peak status.
+// First matching promotion wins; overlapping promotions are not supported.
 func Current() Status {
 	now := NowFn()
 

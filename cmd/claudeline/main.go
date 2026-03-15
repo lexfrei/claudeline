@@ -303,7 +303,7 @@ func promoSuffix(label string, promo promotion.Status) string {
 	}
 
 	switch {
-	case label == "5h":
+	case label == "5h" || strings.HasPrefix(label, "5h-"):
 		return promo.FiveHour
 	case label == "7d" || strings.HasPrefix(label, "7d-"):
 		return promo.SevenDay
