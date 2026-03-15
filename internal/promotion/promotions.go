@@ -2,6 +2,11 @@ package promotion
 
 import "time"
 
+const (
+	peakStartMarch2026 = 8  // 8 AM ET.
+	peakEndMarch2026   = 14 // 2 PM ET.
+)
+
 // knownPromotions lists all Anthropic usage promotions.
 // Add new entries here and rebuild to support future promotions.
 var knownPromotions = []Promotion{
@@ -10,8 +15,8 @@ var knownPromotions = []Promotion{
 		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
 		End:   time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC), // March 27 23:59 PT
 		Peak: PeakSchedule{
-			StartHour: 8,
-			EndHour:   14,
+			StartHour: peakStartMarch2026,
+			EndHour:   peakEndMarch2026,
 			Weekdays:  true,
 			Location:  mustLoadLocation("America/New_York"),
 		},
