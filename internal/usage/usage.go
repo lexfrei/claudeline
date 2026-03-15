@@ -251,7 +251,7 @@ func FetchLastGood() *Data {
 }
 
 // FormatStaleQuotaWindow formats a window with ?% but real time and indicator.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢🌈 5h: ?% (3h)").
+// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: ?% (3h)").
 func FormatStaleQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
@@ -261,7 +261,7 @@ func FormatStaleQuotaWindow(win *QuotaWindow, label, promoIndicator string) stri
 }
 
 // FormatQuotaWindow formats a single quota window for display.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢🌈 5h: 12% (4h 30m)").
+// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: 12% (4h 30m)").
 func FormatQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
