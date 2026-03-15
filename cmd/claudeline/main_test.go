@@ -177,8 +177,8 @@ func TestBuildStatuslineInvalidJSON(t *testing.T) {
 
 	got := buildStatusline([]byte(`not json`), defaultCfg())
 
-	if !strings.Contains(got, "🤖 Claude") {
-		t.Errorf("expected graceful degradation, got %q", got)
+	if got != "⚠️ parse error" {
+		t.Errorf("expected parse error indicator, got %q", got)
 	}
 }
 
