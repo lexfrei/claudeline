@@ -612,6 +612,16 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 		t.Errorf("expected pause indicator for 7d off-peak, got %q", joined)
 	}
 
+	// Verify indicator position: should be immediately after rate circle emoji.
+	// Expected formats: "🟢🌈 5h: 30% (3h)" or "🟡🌈 5h: 30% (3h)"
+	if !strings.Contains(joined, "🟢🌈") && !strings.Contains(joined, "🟡🌈") && !strings.Contains(joined, "🔴🌈") {
+		t.Errorf("expected promo indicator immediately after rate circle for 5h, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "🟢⏸") && !strings.Contains(joined, "🟡⏸") && !strings.Contains(joined, "🔴⏸") {
+		t.Errorf("expected pause indicator immediately after rate circle for 7d, got %q", joined)
+	}
+
 	// Verify indicators are absent when offpeak is disabled.
 	cfg := defaultCfg()
 	cfg.Segments.OffPeak = false
