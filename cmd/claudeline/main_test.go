@@ -588,7 +588,7 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 		return time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC)
 	}
 
-	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+	resetsAt := promotion.NowFn().Add(3 * time.Hour).UTC().Format(time.RFC3339)
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
 	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
