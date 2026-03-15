@@ -20,7 +20,7 @@ var knownPromotions = []Promotion{
 			// Weekdays: Anthropic defines peak as "8 AM-2 PM ET" on business days.
 			// Weekends are implicitly off-peak since peak hours only apply to weekdays.
 			Weekdays: true,
-			Location:  mustLoadLocation("America/New_York"),
+			Location: mustLoadLocation("America/New_York"),
 		},
 	},
 }
