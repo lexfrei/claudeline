@@ -37,6 +37,8 @@ The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — rough
 | 🟢/🟡/🟠/🔴 7d-sonnet | Per-model 7-day Sonnet quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-cowork | Per-model 7-day cowork quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-oauth | Per-model 7-day OAuth apps quota (opt-in via `--per-model-quota`) |
+| 🌈 Off-peak 5h | Shown next to 5h quota when promotional off-peak benefits are active |
+| ⏸ Off-peak 7d | Shown next to 7d quota when promotional off-peak benefits are active |
 | 💳 Credits | Monthly extra credit usage (only shown when active) |
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
@@ -97,6 +99,7 @@ compactions = true
 quota = true
 per_model_quota = false
 credits = true
+offpeak = true
 
 [cache]
 usage_ttl = "10m"
@@ -114,7 +117,7 @@ claudeline --no-cost --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--per-model-quota`, `--no-credits`.
+Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--per-model-quota`, `--no-credits`, `--no-offpeak`.
 
 ## License
 

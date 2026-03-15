@@ -11,6 +11,7 @@ import (
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
+	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
@@ -475,9 +476,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota"})
+	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -504,6 +505,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 	if !cfg.Segments.Cost {
 		t.Error("expected cost still enabled")
 	}
+
+	if cfg.Segments.OffPeak {
+		t.Error("expected offpeak disabled by flag")
+	}
 }
 
 func TestDefaultConfigPath(t *testing.T) {
@@ -526,5 +531,95 @@ func TestFlagSetUnknownFlag(t *testing.T) {
 
 	if flagSet(cmd, "nonexistent-flag") {
 		t.Error("expected false for unknown flag")
+	}
+}
+
+func TestPromoSuffix(t *testing.T) {
+	t.Parallel()
+
+	active := promotion.Status{
+		Active:   true,
+		FiveHour: " 🌈",
+		SevenDay: " ⏸",
+	}
+	inactive := promotion.Status{}
+
+	tests := []struct {
+		name  string
+		label string
+		promo promotion.Status
+		want  string
+	}{
+		{"5h active", "5h", active, " 🌈"},
+		{"7d active", "7d", active, " ⏸"},
+		{"7d-opus active", "7d-opus", active, " ⏸"},
+		{"7d-sonnet active", "7d-sonnet", active, " ⏸"},
+		{"7d-cowork active", "7d-cowork", active, " ⏸"},
+		{"7d-oauth active", "7d-oauth", active, " ⏸"},
+		{"5h-opus hypothetical", "5h-opus", active, " 🌈"},
+		{"unknown label active", "credits", active, ""},
+		{"5h inactive", "5h", inactive, ""},
+		{"7d inactive", "7d", inactive, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := promoSuffix(tt.label, tt.promo)
+			if got != tt.want {
+				t.Errorf("promoSuffix(%q) = %q, want %q", tt.label, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAppendUsageSegmentsOffPeak(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	// Set NowFn to off-peak time during March 2026 promo.
+	origNow := promotion.NowFn
+
+	defer func() { promotion.NowFn = origNow }()
+
+	// March 16 2026 Monday 20:00 EDT = March 17 00:00 UTC (off-peak).
+	promotion.NowFn = func() time.Time {
+		return time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC)
+	}
+
+	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+
+	keychain.GetFn = func() (string, error) { return testToken, nil }
+	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body: []byte(`{
+				"five_hour": {"utilization": 30, "resets_at": "` + resetsAt + `"},
+				"seven_day": {"utilization": 45, "resets_at": "` + resetsAt + `"}
+			}`),
+		}, nil
+	}
+
+	segments := appendUsageSegments(nil, defaultCfg())
+	joined := strings.Join(segments, " | ")
+
+	if !strings.Contains(joined, "🌈") {
+		t.Errorf("expected rainbow indicator for 5h off-peak, got %q", joined)
+	}
+
+	if !strings.Contains(joined, "⏸") {
+		t.Errorf("expected pause indicator for 7d off-peak, got %q", joined)
+	}
+
+	// Verify indicators are absent when offpeak is disabled.
+	cfg := defaultCfg()
+	cfg.Segments.OffPeak = false
+
+	segmentsDisabled := appendUsageSegments(nil, cfg)
+	joinedDisabled := strings.Join(segmentsDisabled, " | ")
+
+	if strings.Contains(joinedDisabled, "🌈") || strings.Contains(joinedDisabled, "⏸") {
+		t.Errorf("expected no off-peak indicators when disabled, got %q", joinedDisabled)
 	}
 }

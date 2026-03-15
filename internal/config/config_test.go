@@ -40,6 +40,10 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected credits segment enabled by default")
 	}
 
+	if !cfg.Segments.OffPeak {
+		t.Error("expected offpeak segment enabled by default")
+	}
+
 	if cfg.Cache.UsageTTL != 10*time.Minute {
 		t.Errorf("expected usage TTL 60s, got %v", cfg.Cache.UsageTTL)
 	}
@@ -118,6 +122,7 @@ context = false
 compactions = false
 quota = false
 credits = false
+offpeak = false
 
 [cache]
 usage_ttl = "120s"
@@ -132,7 +137,8 @@ status_ttl = "30s"
 	cfg := Load(configPath)
 
 	if cfg.Segments.Model || cfg.Segments.Cost || cfg.Segments.Status ||
-		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota || cfg.Segments.Credits {
+		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota ||
+		cfg.Segments.Credits || cfg.Segments.OffPeak {
 		t.Error("expected all segments disabled")
 	}
 
