@@ -12,6 +12,7 @@ import (
 
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/fmtutil"
+	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
@@ -86,6 +87,7 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("no-quota", false, "disable quota segment")
 	flags.Bool("per-model-quota", false, "enable per-model quota segments (opus, sonnet, etc.)")
 	flags.Bool("no-credits", false, "disable credits segment")
+	flags.Bool("no-offpeak", false, "disable off-peak promotion indicators")
 
 	return rootCmd
 }
@@ -121,6 +123,10 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 
 	if flagSet(cmd, "no-credits") {
 		cfg.Segments.Credits = false
+	}
+
+	if flagSet(cmd, "no-offpeak") {
+		cfg.Segments.OffPeak = false
 	}
 }
 
@@ -180,7 +186,7 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	return fmtutil.JoinPipe(segments)
 }
 
-func appendStaleQuotaSegments(segments []string, perModel bool) []string {
+func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.Status) []string {
 	lastGood := usage.FetchLastGood()
 	if lastGood == nil {
 		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
@@ -207,25 +213,25 @@ func appendStaleQuotaSegments(segments []string, perModel bool) []string {
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label))
+			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label)+promoSuffix(w.label, promo))
 		}
 	}
 
 	return segments
 }
 
-func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
+func appendRateLimitSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
 	lastGood := usage.FetchLastGood()
 	segments = append(segments, usage.FormatRateLimitSegment(usage.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
 
 	if cfg.Segments.Quota {
-		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
+		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
 	}
 
 	return segments
 }
 
-func appendQuotaWindows(segments []string, data *usage.Data, perModel bool) []string {
+func appendQuotaWindows(segments []string, data *usage.Data, perModel bool, promo promotion.Status) []string {
 	type labeledWindow struct {
 		win   *usage.QuotaWindow
 		label string
@@ -247,7 +253,7 @@ func appendQuotaWindows(segments []string, data *usage.Data, perModel bool) []st
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label))
+			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label)+promoSuffix(w.label, promo))
 		}
 	}
 
@@ -255,10 +261,15 @@ func appendQuotaWindows(segments []string, data *usage.Data, perModel bool) []st
 }
 
 func appendUsageSegments(segments []string, cfg *config.Config) []string {
+	var promo promotion.Status
+	if cfg.Segments.OffPeak {
+		promo = promotion.Current()
+	}
+
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
-			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
+			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
 		}
 
 		return segments
@@ -268,13 +279,13 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	case "":
 		// no error, continue
 	case "rate_limit_error":
-		return appendRateLimitSegments(segments, cfg)
+		return appendRateLimitSegments(segments, cfg, promo)
 	default:
 		return append(segments, "⚠️ /login needed")
 	}
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota)
+		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota, promo)
 	}
 
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
@@ -283,4 +294,19 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	}
 
 	return segments
+}
+
+func promoSuffix(label string, promo promotion.Status) string {
+	if !promo.Active {
+		return ""
+	}
+
+	switch label {
+	case "5h":
+		return promo.FiveHour
+	case "7d":
+		return promo.SevenDay
+	default:
+		return ""
+	}
 }

@@ -22,6 +22,7 @@ type Segments struct {
 	Quota         bool `mapstructure:"quota"`
 	PerModelQuota bool `mapstructure:"per_model_quota"`
 	Credits       bool `mapstructure:"credits"`
+	OffPeak       bool `mapstructure:"offpeak"`
 }
 
 // Cache controls cache TTL durations.
@@ -47,6 +48,7 @@ func Defaults() Config {
 			Compactions: true,
 			Quota:       true,
 			Credits:     true,
+			OffPeak:     true,
 		},
 		Cache: Cache{
 			UsageTTL:  defaultUsageTTL,
@@ -89,6 +91,7 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.quota", true)
 	viperInstance.SetDefault("segments.per_model_quota", false)
 	viperInstance.SetDefault("segments.credits", true)
+	viperInstance.SetDefault("segments.offpeak", true)
 	viperInstance.SetDefault("cache.usage_ttl", defaultUsageTTL)
 	viperInstance.SetDefault("cache.status_ttl", defaultStatusTTL)
 }
