@@ -29,8 +29,8 @@ type Promotion struct {
 // Status holds the off-peak indicators to append to quota labels.
 type Status struct {
 	Active   bool
-	FiveHour string // " 🌈" or ""
-	SevenDay string // " ⏸" or ""
+	FiveHour string // "🌈" or ""
+	SevenDay string // "⏸" or ""
 }
 
 // Current checks all known promotions and returns the current off-peak status.
