@@ -17,7 +17,9 @@ var knownPromotions = []Promotion{
 		Peak: PeakSchedule{
 			StartHour: peakStartMarch2026,
 			EndHour:   peakEndMarch2026,
-			Weekdays:  true,
+			// Weekdays: Anthropic defines peak as "8 AM-2 PM ET" on business days.
+			// Weekends are implicitly off-peak since peak hours only apply to weekdays.
+			Weekdays: true,
 			Location:  mustLoadLocation("America/New_York"),
 		},
 	},
