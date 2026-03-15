@@ -13,12 +13,14 @@ var knownPromotions = []Promotion{
 	{
 		Name:  "March 2026",
 		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
-		End:   time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC), // March 27 23:59 PT (PDT, UTC-7)
+		End:   time.Date(2026, 3, 28, 7, 0, 0, 0, time.UTC), // March 28 00:00 PT (PDT, UTC-7)
 		Peak: PeakSchedule{
 			StartHour: peakStartMarch2026,
 			EndHour:   peakEndMarch2026,
-			Weekdays:  true,
-			Location:  mustLoadLocation("America/New_York"),
+			// Weekdays: Anthropic defines peak as "8 AM-2 PM ET" on business days.
+			// Weekends are implicitly off-peak since peak hours only apply to weekdays.
+			Weekdays: true,
+			Location: mustLoadLocation("America/New_York"),
 		},
 	},
 }

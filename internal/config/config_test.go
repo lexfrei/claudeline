@@ -165,3 +165,31 @@ func TestLoadInvalidTOML(t *testing.T) {
 		t.Error("expected defaults on invalid TOML")
 	}
 }
+
+func TestLoadUnmarshalError(t *testing.T) {
+	t.Parallel()
+
+	// Valid TOML syntax but wrong type: model expects bool, gets a table.
+	content := `
+[segments]
+[segments.model]
+nested = true
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load(configPath)
+
+	// Should fall back to defaults when unmarshal fails.
+	defaults := Defaults()
+	if cfg.Segments.Model != defaults.Segments.Model {
+		t.Errorf("expected default model=%v on unmarshal error, got %v", defaults.Segments.Model, cfg.Segments.Model)
+	}
+
+	if cfg.Cache.UsageTTL != defaults.Cache.UsageTTL {
+		t.Errorf("expected default usage TTL on unmarshal error, got %v", cfg.Cache.UsageTTL)
+	}
+}

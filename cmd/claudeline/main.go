@@ -147,7 +147,10 @@ func main() {
 func buildStatusline(raw []byte, cfg *config.Config) string {
 	var data stdinData
 
-	_ = json.Unmarshal(raw, &data)
+	unmarshalErr := json.Unmarshal(raw, &data)
+	if unmarshalErr != nil && len(raw) > 0 {
+		fmt.Fprintf(os.Stderr, "claudeline: stdin parse error: %v\n", unmarshalErr)
+	}
 
 	var segments []string
 
@@ -214,7 +217,7 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label)+promoSuffix(w.label, promo))
+			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
 		}
 	}
 
@@ -254,7 +257,7 @@ func appendQuotaWindows(segments []string, data *usage.Data, perModel bool, prom
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label)+promoSuffix(w.label, promo))
+			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
 		}
 	}
 
@@ -297,7 +300,7 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	return segments
 }
 
-func promoSuffix(label string, promo promotion.Status) string {
+func promoIndicator(label string, promo promotion.Status) string {
 	if !promo.Active {
 		return ""
 	}

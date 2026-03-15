@@ -3,6 +3,7 @@ package usage
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,29 @@ func TestCountCompactionsInvalidJSON(t *testing.T) {
 
 	if got := CountCompactions(tmp); got != 0 {
 		t.Errorf("expected 0 for invalid JSON, got %d", got)
+	}
+}
+
+func TestCountCompactionsScannerError(t *testing.T) {
+	t.Parallel()
+
+	// Two valid compaction lines followed by a line that exceeds the scanner buffer.
+	// Scanner will error on the oversized line, but the two valid compactions
+	// should still be counted (partial count is returned).
+	tmp := filepath.Join(t.TempDir(), "transcript.jsonl")
+
+	validLines := `{"type":"boundary","subtype":"compact_boundary"}
+{"type":"boundary","subtype":"compact_boundary"}
+`
+	// scanBufSize*4 = 1MB max line; create a line that exceeds it.
+	oversizedLine := strings.Repeat("x", scanBufSize*4+1) + "\n"
+
+	if err := os.WriteFile(tmp, []byte(validLines+oversizedLine), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := CountCompactions(tmp)
+	if got != 2 {
+		t.Errorf("expected partial count 2 on scanner error, got %d", got)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -175,10 +176,69 @@ func TestBuildStatuslineInvalidJSON(t *testing.T) {
 	status.HTTPGetFn = failHTTP
 	usage.HTTPGetFn = failHTTP
 
+	// Capture stderr to verify error logging.
+	origStderr := os.Stderr
+
+	stderrR, stderrW, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+
+	os.Stderr = stderrW
+
 	got := buildStatusline([]byte(`not json`), defaultCfg())
 
+	stderrW.Close()
+
+	os.Stderr = origStderr
+
+	stderrOut, readErr := io.ReadAll(stderrR)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+
+	// Should still degrade gracefully with default values.
 	if !strings.Contains(got, "🤖 Claude") {
 		t.Errorf("expected graceful degradation, got %q", got)
+	}
+
+	// Should log parse error to stderr.
+	if !strings.Contains(string(stderrOut), "stdin parse error") {
+		t.Errorf("expected stderr parse error log, got %q", stderrOut)
+	}
+}
+
+func TestBuildStatuslineEmptyInput(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	// Empty input should NOT log an error (empty stdin is a valid edge case).
+	origStderr := os.Stderr
+
+	stderrR, stderrW, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+
+	os.Stderr = stderrW
+
+	_ = buildStatusline([]byte{}, defaultCfg())
+
+	stderrW.Close()
+
+	os.Stderr = origStderr
+
+	stderrOut, readErr := io.ReadAll(stderrR)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+
+	if strings.Contains(string(stderrOut), "stdin parse error") {
+		t.Errorf("empty input should not log parse error, got %q", stderrOut)
 	}
 }
 
@@ -534,13 +594,12 @@ func TestFlagSetUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestPromoSuffix(t *testing.T) {
+func TestPromoIndicator(t *testing.T) {
 	t.Parallel()
 
 	active := promotion.Status{
 		Active:   true,
-		FiveHour: " 🌈",
-		SevenDay: " ⏸",
+		FiveHour: "⬆",
 	}
 	inactive := promotion.Status{}
 
@@ -550,13 +609,13 @@ func TestPromoSuffix(t *testing.T) {
 		promo promotion.Status
 		want  string
 	}{
-		{"5h active", "5h", active, " 🌈"},
-		{"7d active", "7d", active, " ⏸"},
-		{"7d-opus active", "7d-opus", active, " ⏸"},
-		{"7d-sonnet active", "7d-sonnet", active, " ⏸"},
-		{"7d-cowork active", "7d-cowork", active, " ⏸"},
-		{"7d-oauth active", "7d-oauth", active, " ⏸"},
-		{"5h-opus hypothetical", "5h-opus", active, " 🌈"},
+		{"5h active", "5h", active, "⬆"},
+		{"7d active", "7d", active, ""},
+		{"7d-opus active", "7d-opus", active, ""},
+		{"7d-sonnet active", "7d-sonnet", active, ""},
+		{"7d-cowork active", "7d-cowork", active, ""},
+		{"7d-oauth active", "7d-oauth", active, ""},
+		{"5h-opus hypothetical", "5h-opus", active, "⬆"},
 		{"unknown label active", "credits", active, ""},
 		{"5h inactive", "5h", inactive, ""},
 		{"7d inactive", "7d", inactive, ""},
@@ -566,9 +625,9 @@ func TestPromoSuffix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := promoSuffix(tt.label, tt.promo)
+			got := promoIndicator(tt.label, tt.promo)
 			if got != tt.want {
-				t.Errorf("promoSuffix(%q) = %q, want %q", tt.label, got, tt.want)
+				t.Errorf("promoIndicator(%q) = %q, want %q", tt.label, got, tt.want)
 			}
 		})
 	}
@@ -588,7 +647,7 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 		return time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC)
 	}
 
-	resetsAt := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+	resetsAt := promotion.NowFn().Add(3 * time.Hour).UTC().Format(time.RFC3339)
 
 	keychain.GetFn = func() (string, error) { return testToken, nil }
 	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
@@ -604,12 +663,19 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 	segments := appendUsageSegments(nil, defaultCfg())
 	joined := strings.Join(segments, " | ")
 
-	if !strings.Contains(joined, "🌈") {
-		t.Errorf("expected rainbow indicator for 5h off-peak, got %q", joined)
+	if !strings.Contains(joined, "⬆") {
+		t.Errorf("expected up-arrow indicator for 5h off-peak, got %q", joined)
 	}
 
-	if !strings.Contains(joined, "⏸") {
-		t.Errorf("expected pause indicator for 7d off-peak, got %q", joined)
+	// 7d should NOT have any off-peak indicator (7d still counts during off-peak).
+	if strings.Contains(joined, "⏸") {
+		t.Errorf("7d should not have pause indicator, got %q", joined)
+	}
+
+	// Verify indicator position: should be immediately after rate circle emoji.
+	if !strings.Contains(joined, "🟢⬆") && !strings.Contains(joined, "🟡⬆") &&
+		!strings.Contains(joined, "🟠⬆") && !strings.Contains(joined, "🔴⬆") {
+		t.Errorf("expected up-arrow immediately after rate circle for 5h, got %q", joined)
 	}
 
 	// Verify indicators are absent when offpeak is disabled.
@@ -619,7 +685,7 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 	segmentsDisabled := appendUsageSegments(nil, cfg)
 	joinedDisabled := strings.Join(segmentsDisabled, " | ")
 
-	if strings.Contains(joinedDisabled, "🌈") || strings.Contains(joinedDisabled, "⏸") {
+	if strings.Contains(joinedDisabled, "⬆") {
 		t.Errorf("expected no off-peak indicators when disabled, got %q", joinedDisabled)
 	}
 }

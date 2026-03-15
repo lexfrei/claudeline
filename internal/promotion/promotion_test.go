@@ -90,7 +90,7 @@ func TestIsOffPeak(t *testing.T) {
 	promo := Promotion{
 		Name:  "Test Promo",
 		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
-		End:   time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC),
+		End:   time.Date(2026, 3, 28, 7, 0, 0, 0, time.UTC),
 		Peak: PeakSchedule{
 			StartHour: 8,
 			EndHour:   14,
@@ -146,7 +146,7 @@ func TestIsOffPeak(t *testing.T) {
 		},
 		{
 			"promo end boundary exclusive",
-			time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC), // exactly at end
+			time.Date(2026, 3, 28, 7, 0, 0, 0, time.UTC), // exactly at end
 			false,
 		},
 	}
@@ -225,7 +225,7 @@ func TestIsOffPeakDST(t *testing.T) {
 func TestIsOffPeakEndDateBoundary(t *testing.T) {
 	t.Parallel()
 
-	// Verify the UTC end boundary derived from March 27 23:59 PDT (= March 28 06:59 UTC).
+	// Verify the UTC end boundary derived from March 28 00:00 PDT (= March 28 07:00 UTC).
 	// Peak schedule location (ET) is irrelevant to end date check — End is stored in UTC.
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -235,7 +235,7 @@ func TestIsOffPeakEndDateBoundary(t *testing.T) {
 	promo := Promotion{
 		Name:  "End Date Test",
 		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
-		End:   time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC),
+		End:   time.Date(2026, 3, 28, 7, 0, 0, 0, time.UTC),
 		Peak: PeakSchedule{
 			StartHour: 8,
 			EndHour:   14,
@@ -250,15 +250,15 @@ func TestIsOffPeakEndDateBoundary(t *testing.T) {
 		want bool
 	}{
 		{
-			"just before end March 28 00:00 PDT",
-			// March 28 00:00 PDT = March 28 07:00 UTC. But End is 06:59 UTC, so this is AFTER end.
+			"exactly at end March 28 00:00 PDT",
+			// March 28 00:00 PDT = March 28 07:00 UTC. End is exclusive, so this is outside.
 			time.Date(2026, 3, 28, 7, 0, 0, 0, time.UTC),
 			false,
 		},
 		{
 			"last minute before end",
-			// March 28 06:58 UTC is before 06:59 UTC end.
-			time.Date(2026, 3, 28, 6, 58, 0, 0, time.UTC),
+			// March 28 06:59 UTC is before 07:00 UTC end.
+			time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC),
 			true, // Saturday off-peak
 		},
 	}
@@ -328,7 +328,7 @@ func TestCurrentMarch2026Promo(t *testing.T) {
 			"off-peak evening",
 			// March 16 2026 Monday 20:00 EDT = March 17 00:00 UTC.
 			time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC),
-			true, " 🌈", " ⏸",
+			true, "⬆", "",
 		},
 		{
 			"peak morning",
@@ -340,7 +340,7 @@ func TestCurrentMarch2026Promo(t *testing.T) {
 			"weekend",
 			// March 14 2026 Saturday 10:00 EDT.
 			time.Date(2026, 3, 14, 14, 0, 0, 0, time.UTC),
-			true, " 🌈", " ⏸",
+			true, "⬆", "",
 		},
 	}
 

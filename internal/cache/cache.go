@@ -38,6 +38,8 @@ func ReadAny(path string) ([]byte, bool) {
 }
 
 // Write stores data to path via temp file + rename for crash safety.
+// Errors are intentionally not returned: cache is best-effort in a statusline tool.
+// A failed write means slightly stale data on the next read, which is acceptable.
 func Write(path string, data []byte) {
 	tmp := path + ".tmp"
 
@@ -46,5 +48,8 @@ func Write(path string, data []byte) {
 		return
 	}
 
-	_ = os.Rename(tmp, path)
+	renameErr := os.Rename(tmp, path)
+	if renameErr != nil {
+		_ = os.Remove(tmp)
+	}
 }
