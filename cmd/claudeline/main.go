@@ -147,7 +147,10 @@ func main() {
 func buildStatusline(raw []byte, cfg *config.Config) string {
 	var data stdinData
 
-	_ = json.Unmarshal(raw, &data)
+	unmarshalErr := json.Unmarshal(raw, &data)
+	if unmarshalErr != nil && len(raw) > 0 {
+		fmt.Fprintf(os.Stderr, "claudeline: stdin parse error: %v\n", unmarshalErr)
+	}
 
 	var segments []string
 

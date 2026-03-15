@@ -74,6 +74,28 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestWriteRenameFailureCleansTemp(t *testing.T) {
+	t.Parallel()
+
+	// Write to a path where rename will fail: target is a directory.
+	dir := t.TempDir()
+	targetDir := filepath.Join(dir, "target")
+
+	if err := os.Mkdir(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	Write(targetDir, []byte("data"))
+
+	// Temp file should be cleaned up after rename failure.
+	tmpFile := targetDir + ".tmp"
+
+	_, err := os.Stat(tmpFile)
+	if err == nil {
+		t.Error("temp file should be cleaned up after rename failure")
+	}
+}
+
 func TestWriteAtomic(t *testing.T) {
 	t.Parallel()
 

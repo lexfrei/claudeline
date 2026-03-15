@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -175,10 +176,69 @@ func TestBuildStatuslineInvalidJSON(t *testing.T) {
 	status.HTTPGetFn = failHTTP
 	usage.HTTPGetFn = failHTTP
 
+	// Capture stderr to verify error logging.
+	origStderr := os.Stderr
+
+	stderrR, stderrW, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+
+	os.Stderr = stderrW
+
 	got := buildStatusline([]byte(`not json`), defaultCfg())
 
+	stderrW.Close()
+
+	os.Stderr = origStderr
+
+	stderrOut, readErr := io.ReadAll(stderrR)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+
+	// Should still degrade gracefully with default values.
 	if !strings.Contains(got, "🤖 Claude") {
 		t.Errorf("expected graceful degradation, got %q", got)
+	}
+
+	// Should log parse error to stderr.
+	if !strings.Contains(string(stderrOut), "stdin parse error") {
+		t.Errorf("expected stderr parse error log, got %q", stderrOut)
+	}
+}
+
+func TestBuildStatuslineEmptyInput(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	// Empty input should NOT log an error (empty stdin is a valid edge case).
+	origStderr := os.Stderr
+
+	stderrR, stderrW, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+
+	os.Stderr = stderrW
+
+	_ = buildStatusline([]byte{}, defaultCfg())
+
+	stderrW.Close()
+
+	os.Stderr = origStderr
+
+	stderrOut, readErr := io.ReadAll(stderrR)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+
+	if strings.Contains(string(stderrOut), "stdin parse error") {
+		t.Errorf("empty input should not log parse error, got %q", stderrOut)
 	}
 }
 

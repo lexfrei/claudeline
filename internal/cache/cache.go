@@ -48,5 +48,8 @@ func Write(path string, data []byte) {
 		return
 	}
 
-	_ = os.Rename(tmp, path)
+	renameErr := os.Rename(tmp, path)
+	if renameErr != nil {
+		_ = os.Remove(tmp)
+	}
 }

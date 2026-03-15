@@ -11,6 +11,8 @@ import (
 const scanBufSize = 256 * 1024
 
 // CountCompactions counts compact_boundary entries in a session transcript JSONL.
+// On I/O errors, the count of entries successfully read before the error is returned.
+// This means the result may be incomplete but never inflated.
 func CountCompactions(transcriptPath string) int {
 	if transcriptPath == "" {
 		return 0
