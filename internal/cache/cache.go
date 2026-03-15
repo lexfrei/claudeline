@@ -2,7 +2,6 @@
 package cache
 
 import (
-	"fmt"
 	"os"
 	"time"
 )
@@ -39,18 +38,15 @@ func ReadAny(path string) ([]byte, bool) {
 }
 
 // Write stores data to path via temp file + rename for crash safety.
-func Write(path string, data []byte) error {
+// Errors are intentionally not returned: cache is best-effort in a statusline tool.
+// A failed write means slightly stale data on the next read, which is acceptable.
+func Write(path string, data []byte) {
 	tmp := path + ".tmp"
 
 	err := os.WriteFile(tmp, data, fileMode)
 	if err != nil {
-		return fmt.Errorf("write temp file: %w", err)
+		return
 	}
 
-	renameErr := os.Rename(tmp, path)
-	if renameErr != nil {
-		return fmt.Errorf("rename temp file: %w", renameErr)
-	}
-
-	return nil
+	_ = os.Rename(tmp, path)
 }

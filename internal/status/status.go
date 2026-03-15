@@ -44,13 +44,13 @@ func FetchAlert() string {
 
 	httpResp, err := HTTPGetFn(apiURL, nil, apiTimeout)
 	if err != nil {
-		_ = cache.Write(CachePath, nil)
+		cache.Write(CachePath, nil)
 
 		return ""
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		_ = cache.Write(CachePath, nil)
+		cache.Write(CachePath, nil)
 
 		return ""
 	}
@@ -59,13 +59,13 @@ func FetchAlert() string {
 
 	unmarshalErr := json.Unmarshal(httpResp.Body, &resp)
 	if unmarshalErr != nil {
-		_ = cache.Write(CachePath, nil)
+		cache.Write(CachePath, nil)
 
 		return ""
 	}
 
 	result := statusMap[resp.Status.Indicator]
-	_ = cache.Write(CachePath, []byte(result))
+	cache.Write(CachePath, []byte(result))
 
 	return result
 }

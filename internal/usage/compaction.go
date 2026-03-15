@@ -37,9 +37,7 @@ func CountCompactions(transcriptPath string) int {
 		}
 	}
 
-	if scanner.Err() != nil {
-		return 0
-	}
-
+	// Return partial count even on scanner error: lines read before the error
+	// were valid, and a partial count is more useful than zero.
 	return count
 }
