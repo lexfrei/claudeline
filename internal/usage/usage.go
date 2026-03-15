@@ -67,6 +67,10 @@ func Fetch() (*Data, error) {
 		return nil, fmt.Errorf("getting oauth token: %w", err)
 	}
 
+	if token == "" {
+		return nil, fmt.Errorf("getting oauth token: %w", keychain.ErrNoToken)
+	}
+
 	if authFailedForToken(token) {
 		return &Data{ErrorType: "authentication_error"}, nil
 	}

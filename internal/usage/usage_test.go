@@ -1067,6 +1067,36 @@ func TestFetchNoToken(t *testing.T) {
 	}
 }
 
+func TestFetchEmptyToken(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origRetryPath := RetryAfterPath
+	origAuthPath := AuthFailPath
+	origToken := keychain.GetFn
+
+	CachePath = filepath.Join(dir, "usage-cache.json")
+	RetryAfterPath = filepath.Join(dir, "retry-after")
+	AuthFailPath = filepath.Join(dir, "auth-failed")
+
+	defer func() {
+		CachePath = origPath
+		RetryAfterPath = origRetryPath
+		AuthFailPath = origAuthPath
+		keychain.GetFn = origToken
+	}()
+
+	keychain.GetFn = func() (string, error) { return "", nil }
+
+	_, err := Fetch()
+	if err == nil {
+		t.Fatal("expected error when token is empty")
+	}
+
+	if !errors.Is(err, keychain.ErrNoToken) {
+		t.Errorf("expected ErrNoToken in error chain, got: %v", err)
+	}
+}
+
 func TestFetchHTTPError(t *testing.T) {
 	dir := t.TempDir()
 	origPath := CachePath
