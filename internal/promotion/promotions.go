@@ -3,8 +3,8 @@ package promotion
 import "time"
 
 const (
-	peakStartMarch2026 = 8  // 8 AM ET.
-	peakEndMarch2026   = 14 // 2 PM ET.
+	peakStartMarch2026 = 8  // 8 AM ET (Eastern Time, as defined by Anthropic).
+	peakEndMarch2026   = 14 // 2 PM ET (Eastern Time, as defined by Anthropic).
 )
 
 // knownPromotions lists all Anthropic usage promotions.
