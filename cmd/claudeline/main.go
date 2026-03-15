@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -301,10 +302,10 @@ func promoSuffix(label string, promo promotion.Status) string {
 		return ""
 	}
 
-	switch label {
-	case "5h":
+	switch {
+	case label == "5h":
 		return promo.FiveHour
-	case "7d":
+	case label == "7d" || strings.HasPrefix(label, "7d-"):
 		return promo.SevenDay
 	default:
 		return ""

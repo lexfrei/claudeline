@@ -90,7 +90,7 @@ func TestIsOffPeak(t *testing.T) {
 	promo := Promotion{
 		Name:  "Test Promo",
 		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
-		End:   time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC),
 		Peak: PeakSchedule{
 			StartHour: 8,
 			EndHour:   14,
@@ -146,7 +146,7 @@ func TestIsOffPeak(t *testing.T) {
 		},
 		{
 			"promo end boundary exclusive",
-			time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC), // exactly at end
+			time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC), // exactly at end
 			false,
 		},
 	}
@@ -222,9 +222,62 @@ func TestIsOffPeakDST(t *testing.T) {
 	}
 }
 
-func TestCurrent(t *testing.T) {
+func TestIsOffPeakEndDatePDT(t *testing.T) {
 	t.Parallel()
 
+	// Verify the March 2026 promo end date in PDT context.
+	// March 27 23:59 PT (PDT, UTC-7) = March 28 06:59 UTC.
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tzdata not available: %v", err)
+	}
+
+	promo := Promotion{
+		Name:  "End Date Test",
+		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC),
+		Peak: PeakSchedule{
+			StartHour: 8,
+			EndHour:   14,
+			Weekdays:  true,
+			Location:  loc,
+		},
+	}
+
+	tests := []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{
+			"just before end March 28 00:00 PDT",
+			// March 28 00:00 PDT = March 28 07:00 UTC. But End is 06:59 UTC, so this is AFTER end.
+			time.Date(2026, 3, 28, 7, 0, 0, 0, time.UTC),
+			false,
+		},
+		{
+			"last minute before end",
+			// March 28 06:58 UTC is before 06:59 UTC end.
+			time.Date(2026, 3, 28, 6, 58, 0, 0, time.UTC),
+			true, // Saturday off-peak
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := isOffPeak(tt.now, promo)
+			if got != tt.want {
+				t.Errorf("isOffPeak(%v) = %v, want %v", tt.now, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCurrent and TestCurrentMarch2026Promo do NOT use t.Parallel on the parent
+// because they mutate the package-level NowFn. Subtests also run sequentially.
+func TestCurrent(t *testing.T) {
 	tests := []struct {
 		name       string
 		now        time.Time
@@ -241,38 +294,29 @@ func TestCurrent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			origNow := NowFn
 
 			t.Cleanup(func() { NowFn = origNow })
 
 			NowFn = func() time.Time { return tt.now }
 
-			status := Current()
-			if status.Active != tt.wantActive {
-				t.Errorf("Active = %v, want %v", status.Active, tt.wantActive)
+			got := Current()
+			if got.Active != tt.wantActive {
+				t.Errorf("Active = %v, want %v", got.Active, tt.wantActive)
 			}
 
-			if status.FiveHour != tt.wantFiveH {
-				t.Errorf("FiveHour = %q, want %q", status.FiveHour, tt.wantFiveH)
+			if got.FiveHour != tt.wantFiveH {
+				t.Errorf("FiveHour = %q, want %q", got.FiveHour, tt.wantFiveH)
 			}
 
-			if status.SevenDay != tt.wantSevenD {
-				t.Errorf("SevenDay = %q, want %q", status.SevenDay, tt.wantSevenD)
+			if got.SevenDay != tt.wantSevenD {
+				t.Errorf("SevenDay = %q, want %q", got.SevenDay, tt.wantSevenD)
 			}
 		})
 	}
 }
 
 func TestCurrentMarch2026Promo(t *testing.T) {
-	t.Parallel()
-
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		t.Skipf("tzdata not available: %v", err)
-	}
-
 	tests := []struct {
 		name       string
 		now        time.Time
@@ -300,29 +344,25 @@ func TestCurrentMarch2026Promo(t *testing.T) {
 		},
 	}
 
-	_ = loc // DST handled by knownPromotions using real location.
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			origNow := NowFn
 
 			t.Cleanup(func() { NowFn = origNow })
 
 			NowFn = func() time.Time { return tt.now }
 
-			status := Current()
-			if status.Active != tt.wantActive {
-				t.Errorf("Active = %v, want %v", status.Active, tt.wantActive)
+			got := Current()
+			if got.Active != tt.wantActive {
+				t.Errorf("Active = %v, want %v", got.Active, tt.wantActive)
 			}
 
-			if status.FiveHour != tt.wantFiveH {
-				t.Errorf("FiveHour = %q, want %q", status.FiveHour, tt.wantFiveH)
+			if got.FiveHour != tt.wantFiveH {
+				t.Errorf("FiveHour = %q, want %q", got.FiveHour, tt.wantFiveH)
 			}
 
-			if status.SevenDay != tt.wantSevenD {
-				t.Errorf("SevenDay = %q, want %q", status.SevenDay, tt.wantSevenD)
+			if got.SevenDay != tt.wantSevenD {
+				t.Errorf("SevenDay = %q, want %q", got.SevenDay, tt.wantSevenD)
 			}
 		})
 	}

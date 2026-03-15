@@ -13,7 +13,7 @@ var knownPromotions = []Promotion{
 	{
 		Name:  "March 2026",
 		Start: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
-		End:   time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC), // March 27 23:59 PT
+		End:   time.Date(2026, 3, 28, 6, 59, 0, 0, time.UTC), // March 27 23:59 PT (PDT, UTC-7)
 		Peak: PeakSchedule{
 			StartHour: peakStartMarch2026,
 			EndHour:   peakEndMarch2026,

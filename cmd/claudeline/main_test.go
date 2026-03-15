@@ -475,9 +475,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota"})
+	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -503,6 +503,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 
 	if !cfg.Segments.Cost {
 		t.Error("expected cost still enabled")
+	}
+
+	if cfg.Segments.OffPeak {
+		t.Error("expected offpeak disabled by flag")
 	}
 }
 
