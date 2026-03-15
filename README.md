@@ -31,14 +31,12 @@ The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — rough
 | ⚠️/🔶/🔴 Status | Anthropic platform status: ⚠️ degraded, 🔶 major outage, 🔴 critical (hidden when all clear) |
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
-| 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
-| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset |
+| 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset (⏸ during off-peak promotions) |
+| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (🌈 during off-peak promotions) |
 | 🟢/🟡/🟠/🔴 7d-opus | Per-model 7-day Opus quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-sonnet | Per-model 7-day Sonnet quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-cowork | Per-model 7-day cowork quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-oauth | Per-model 7-day OAuth apps quota (opt-in via `--per-model-quota`) |
-| 🌈 Off-peak 5h | Shown next to 5h quota when promotional off-peak benefits are active |
-| ⏸ Off-peak 7d | Shown next to 7d quota when promotional off-peak benefits are active |
 | 💳 Credits | Monthly extra credit usage (only shown when active) |
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
@@ -47,6 +45,15 @@ Quota indicators compare your usage rate against elapsed time to warn about hitt
 - 🟡 usage is slightly ahead of schedule
 - 🟠 usage is significantly ahead of schedule
 - 🔴 on track to hit the limit before reset
+
+### Off-peak promotions
+
+During [Anthropic usage promotions](https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion), off-peak hours provide boosted limits. claudeline appends indicators to the quota segments when a promotion is active and you are currently in an off-peak window:
+
+- 🌈 next to 5h — the 5-hour rate limit is doubled
+- ⏸ next to 7d — usage does not count against the 7-day quota
+
+Disable with `--no-offpeak` or `offpeak = false` in config.
 
 ## Requirements
 
