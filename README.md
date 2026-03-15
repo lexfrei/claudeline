@@ -31,8 +31,8 @@ The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — rough
 | ⚠️/🔶/🔴 Status | Anthropic platform status: ⚠️ degraded, 🔶 major outage, 🔴 critical (hidden when all clear) |
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
-| 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset (⏸ during off-peak promotions) |
-| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (🌈 during off-peak promotions) |
+| 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
+| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (⬆ during off-peak promotions) |
 | 🟢/🟡/🟠/🔴 7d-opus | Per-model 7-day Opus quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-sonnet | Per-model 7-day Sonnet quota (opt-in via `--per-model-quota`) |
 | 🟢/🟡/🟠/🔴 7d-cowork | Per-model 7-day cowork quota (opt-in via `--per-model-quota`) |
@@ -48,10 +48,7 @@ Quota indicators compare your usage rate against elapsed time to warn about hitt
 
 ### Off-peak promotions
 
-During [Anthropic usage promotions](https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion), off-peak hours provide boosted limits. claudeline appends indicators to the quota segments when a promotion is active and you are currently in an off-peak window:
-
-- 🌈 next to 5h — the 5-hour rate limit is doubled
-- ⏸ next to 7d — usage does not count against the 7-day quota
+During [Anthropic usage promotions](https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion), off-peak hours provide boosted 5-hour limits. claudeline shows ⬆ next to the 5h quota segment when a promotion is active and you are in an off-peak window. The 7-day limit is unaffected — only bonus usage above the normal 5h cap is excluded from weekly counting.
 
 Disable with `--no-offpeak` or `offpeak = false` in config.
 

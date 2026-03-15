@@ -599,8 +599,7 @@ func TestPromoIndicator(t *testing.T) {
 
 	active := promotion.Status{
 		Active:   true,
-		FiveHour: "🌈",
-		SevenDay: "⏸",
+		FiveHour: "⬆",
 	}
 	inactive := promotion.Status{}
 
@@ -610,13 +609,13 @@ func TestPromoIndicator(t *testing.T) {
 		promo promotion.Status
 		want  string
 	}{
-		{"5h active", "5h", active, "🌈"},
-		{"7d active", "7d", active, "⏸"},
-		{"7d-opus active", "7d-opus", active, "⏸"},
-		{"7d-sonnet active", "7d-sonnet", active, "⏸"},
-		{"7d-cowork active", "7d-cowork", active, "⏸"},
-		{"7d-oauth active", "7d-oauth", active, "⏸"},
-		{"5h-opus hypothetical", "5h-opus", active, "🌈"},
+		{"5h active", "5h", active, "⬆"},
+		{"7d active", "7d", active, ""},
+		{"7d-opus active", "7d-opus", active, ""},
+		{"7d-sonnet active", "7d-sonnet", active, ""},
+		{"7d-cowork active", "7d-cowork", active, ""},
+		{"7d-oauth active", "7d-oauth", active, ""},
+		{"5h-opus hypothetical", "5h-opus", active, "⬆"},
 		{"unknown label active", "credits", active, ""},
 		{"5h inactive", "5h", inactive, ""},
 		{"7d inactive", "7d", inactive, ""},
@@ -664,22 +663,19 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 	segments := appendUsageSegments(nil, defaultCfg())
 	joined := strings.Join(segments, " | ")
 
-	if !strings.Contains(joined, "🌈") {
-		t.Errorf("expected rainbow indicator for 5h off-peak, got %q", joined)
+	if !strings.Contains(joined, "⬆") {
+		t.Errorf("expected up-arrow indicator for 5h off-peak, got %q", joined)
 	}
 
-	if !strings.Contains(joined, "⏸") {
-		t.Errorf("expected pause indicator for 7d off-peak, got %q", joined)
+	// 7d should NOT have any off-peak indicator (7d still counts during off-peak).
+	if strings.Contains(joined, "⏸") {
+		t.Errorf("7d should not have pause indicator, got %q", joined)
 	}
 
 	// Verify indicator position: should be immediately after rate circle emoji.
-	// Expected formats: "🟢🌈 5h: 30% (3h)" or "🟡🌈 5h: 30% (3h)"
-	if !strings.Contains(joined, "🟢🌈") && !strings.Contains(joined, "🟡🌈") && !strings.Contains(joined, "🔴🌈") {
-		t.Errorf("expected promo indicator immediately after rate circle for 5h, got %q", joined)
-	}
-
-	if !strings.Contains(joined, "🟢⏸") && !strings.Contains(joined, "🟡⏸") && !strings.Contains(joined, "🔴⏸") {
-		t.Errorf("expected pause indicator immediately after rate circle for 7d, got %q", joined)
+	if !strings.Contains(joined, "🟢⬆") && !strings.Contains(joined, "🟡⬆") &&
+		!strings.Contains(joined, "🟠⬆") && !strings.Contains(joined, "🔴⬆") {
+		t.Errorf("expected up-arrow immediately after rate circle for 5h, got %q", joined)
 	}
 
 	// Verify indicators are absent when offpeak is disabled.
@@ -689,7 +685,7 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 	segmentsDisabled := appendUsageSegments(nil, cfg)
 	joinedDisabled := strings.Join(segmentsDisabled, " | ")
 
-	if strings.Contains(joinedDisabled, "🌈") || strings.Contains(joinedDisabled, "⏸") {
+	if strings.Contains(joinedDisabled, "⬆") {
 		t.Errorf("expected no off-peak indicators when disabled, got %q", joinedDisabled)
 	}
 }
