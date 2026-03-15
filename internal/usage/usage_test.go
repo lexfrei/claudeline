@@ -213,7 +213,7 @@ func TestFormatQuotaWindow(t *testing.T) {
 		RemainingMinutes: 6857,
 	}
 
-	got := FormatQuotaWindow(win, "7d")
+	got := FormatQuotaWindow(win, "7d", "")
 	if got == "" {
 		t.Error("FormatQuotaWindow returned empty string")
 	}

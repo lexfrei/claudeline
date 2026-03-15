@@ -534,13 +534,13 @@ func TestFlagSetUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestPromoSuffix(t *testing.T) {
+func TestPromoIndicator(t *testing.T) {
 	t.Parallel()
 
 	active := promotion.Status{
 		Active:   true,
-		FiveHour: " 🌈",
-		SevenDay: " ⏸",
+		FiveHour: "🌈",
+		SevenDay: "⏸",
 	}
 	inactive := promotion.Status{}
 
@@ -550,13 +550,13 @@ func TestPromoSuffix(t *testing.T) {
 		promo promotion.Status
 		want  string
 	}{
-		{"5h active", "5h", active, " 🌈"},
-		{"7d active", "7d", active, " ⏸"},
-		{"7d-opus active", "7d-opus", active, " ⏸"},
-		{"7d-sonnet active", "7d-sonnet", active, " ⏸"},
-		{"7d-cowork active", "7d-cowork", active, " ⏸"},
-		{"7d-oauth active", "7d-oauth", active, " ⏸"},
-		{"5h-opus hypothetical", "5h-opus", active, " 🌈"},
+		{"5h active", "5h", active, "🌈"},
+		{"7d active", "7d", active, "⏸"},
+		{"7d-opus active", "7d-opus", active, "⏸"},
+		{"7d-sonnet active", "7d-sonnet", active, "⏸"},
+		{"7d-cowork active", "7d-cowork", active, "⏸"},
+		{"7d-oauth active", "7d-oauth", active, "⏸"},
+		{"5h-opus hypothetical", "5h-opus", active, "🌈"},
 		{"unknown label active", "credits", active, ""},
 		{"5h inactive", "5h", inactive, ""},
 		{"7d inactive", "7d", inactive, ""},
@@ -566,9 +566,9 @@ func TestPromoSuffix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := promoSuffix(tt.label, tt.promo)
+			got := promoIndicator(tt.label, tt.promo)
 			if got != tt.want {
-				t.Errorf("promoSuffix(%q) = %q, want %q", tt.label, got, tt.want)
+				t.Errorf("promoIndicator(%q) = %q, want %q", tt.label, got, tt.want)
 			}
 		})
 	}

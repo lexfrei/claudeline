@@ -328,7 +328,7 @@ func TestCurrentMarch2026Promo(t *testing.T) {
 			"off-peak evening",
 			// March 16 2026 Monday 20:00 EDT = March 17 00:00 UTC.
 			time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC),
-			true, " 🌈", " ⏸",
+			true, "🌈", "⏸",
 		},
 		{
 			"peak morning",
@@ -340,7 +340,7 @@ func TestCurrentMarch2026Promo(t *testing.T) {
 			"weekend",
 			// March 14 2026 Saturday 10:00 EDT.
 			time.Date(2026, 3, 14, 14, 0, 0, 0, time.UTC),
-			true, " 🌈", " ⏸",
+			true, "🌈", "⏸",
 		},
 	}
 

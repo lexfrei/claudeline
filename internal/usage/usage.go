@@ -247,21 +247,23 @@ func FetchLastGood() *Data {
 }
 
 // FormatStaleQuotaWindow formats a window with ?% but real time and indicator.
-func FormatStaleQuotaWindow(win *QuotaWindow, label string) string {
+// The optional promoIndicator is placed right after the rate circle (e.g. "🟢🌈 5h: ?% (3h)").
+func FormatStaleQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := fmtutil.Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s %s: ?%% (%s)", indicator, label, dur)
+	return fmt.Sprintf("%s%s %s: ?%% (%s)", indicator, promoIndicator, label, dur)
 }
 
 // FormatQuotaWindow formats a single quota window for display.
-func FormatQuotaWindow(win *QuotaWindow, label string) string {
+// The optional promoIndicator is placed right after the rate circle (e.g. "🟢🌈 5h: 12% (4h 30m)").
+func FormatQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := fmtutil.Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s %s: %d%% (%s)", indicator, label, pct, dur)
+	return fmt.Sprintf("%s%s %s: %d%% (%s)", indicator, promoIndicator, label, pct, dur)
 }
 
 // FormatRateLimitSegment formats the explicit exhausted-limit segment.

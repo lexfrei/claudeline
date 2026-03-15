@@ -42,8 +42,8 @@ func Current() Status {
 		if isOffPeak(now, knownPromotions[idx]) {
 			return Status{
 				Active:   true,
-				FiveHour: " 🌈",
-				SevenDay: " ⏸",
+				FiveHour: "🌈",
+				SevenDay: "⏸",
 			}
 		}
 	}
