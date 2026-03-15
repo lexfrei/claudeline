@@ -95,7 +95,7 @@ func Fetch() (*Data, error) {
 		return nil, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
 	}
 
-	cache.Write(CachePath, resp.Body)
+	_ = cache.Write(CachePath, resp.Body)
 
 	return ParseBody(resp.Body)
 }
@@ -121,7 +121,7 @@ func retryAfterActive() bool {
 func writeRetryAfter(header http.Header) {
 	seconds := parseRetryAfterSeconds(header)
 	deadline := time.Now().UTC().Add(time.Duration(seconds)*time.Second + retryAfterBuffer)
-	cache.Write(RetryAfterPath, []byte(deadline.Format(time.RFC3339)))
+	_ = cache.Write(RetryAfterPath, []byte(deadline.Format(time.RFC3339)))
 }
 
 // parseRetryAfterSeconds extracts the number of seconds from a Retry-After header.
@@ -154,7 +154,7 @@ func authFailedForToken(token string) bool {
 
 // writeAuthFailed stores the hash of the token that got a 401 response.
 func writeAuthFailed(token string) {
-	cache.Write(AuthFailPath, []byte(hashToken(token)))
+	_ = cache.Write(AuthFailPath, []byte(hashToken(token)))
 }
 
 // hashToken returns a hex-encoded SHA-256 hash of the token.
@@ -177,7 +177,7 @@ func ParseBody(body []byte) (*Data, error) {
 		return &Data{ErrorType: resp.Error.Type}, nil
 	}
 
-	cache.Write(LastGoodCachePath, body)
+	_ = cache.Write(LastGoodCachePath, body)
 
 	result := &Data{}
 

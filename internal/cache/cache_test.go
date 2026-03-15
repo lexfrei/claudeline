@@ -62,7 +62,10 @@ func TestWrite(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "cache.json")
 	data := []byte(`hello`)
 
-	Write(tmp, data)
+	writeErr := Write(tmp, data)
+	if writeErr != nil {
+		t.Fatalf("Write failed: %v", writeErr)
+	}
 
 	got, err := os.ReadFile(tmp)
 	if err != nil {
@@ -80,8 +83,13 @@ func TestWriteAtomic(t *testing.T) {
 	dir := t.TempDir()
 	tmp := filepath.Join(dir, "cache.json")
 
-	Write(tmp, []byte("first"))
-	Write(tmp, []byte("second"))
+	if err := Write(tmp, []byte("first")); err != nil {
+		t.Fatalf("first Write failed: %v", err)
+	}
+
+	if err := Write(tmp, []byte("second")); err != nil {
+		t.Fatalf("second Write failed: %v", err)
+	}
 
 	got, _ := os.ReadFile(tmp)
 	if string(got) != "second" {

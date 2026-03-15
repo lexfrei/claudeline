@@ -37,5 +37,9 @@ func CountCompactions(transcriptPath string) int {
 		}
 	}
 
+	if scanner.Err() != nil {
+		return 0
+	}
+
 	return count
 }

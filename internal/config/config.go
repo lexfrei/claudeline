@@ -2,6 +2,8 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/viper"
@@ -77,7 +79,12 @@ func Load(configPath string) Config {
 		return cfg
 	}
 
-	_ = viperInstance.Unmarshal(&cfg)
+	unmarshalErr := viperInstance.Unmarshal(&cfg)
+	if unmarshalErr != nil {
+		fmt.Fprintf(os.Stderr, "claudeline: config parse error: %v\n", unmarshalErr)
+
+		return Defaults()
+	}
 
 	return cfg
 }
