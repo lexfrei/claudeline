@@ -1,4 +1,5 @@
-package usage
+// Package compaction counts context compactions in Claude Code session transcripts.
+package compaction
 
 import (
 	"bufio"

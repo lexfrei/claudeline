@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lexfrei/claudeline/internal/compaction"
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/promotion"
@@ -178,7 +179,7 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	}
 
 	if cfg.Segments.Compactions {
-		if compactions := usage.CountCompactions(data.TranscriptPath); compactions > 0 {
+		if compactions := compaction.CountCompactions(data.TranscriptPath); compactions > 0 {
 			segments = append(segments, fmt.Sprintf("🔄 %d", compactions))
 		}
 	}
