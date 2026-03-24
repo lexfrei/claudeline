@@ -49,17 +49,17 @@ var HTTPGetFn httpclient.GetFn = httpclient.Get
 
 // apiResponse mirrors the JSON structure from the Anthropic usage API.
 type apiResponse struct {
-	FiveHour          *apiWindow `json:"five_hour"`
-	SevenDay          *apiWindow `json:"seven_day"`
-	SevenDayOpus      *apiWindow `json:"seven_day_opus"`
-	SevenDaySonnet    *apiWindow `json:"seven_day_sonnet"`
-	SevenDayCowork    *apiWindow `json:"seven_day_cowork"`
-	SevenDayOAuthApps *apiWindow `json:"seven_day_oauth_apps"`
+	FiveHour          *apiWindow `json:"five_hour"`            //nolint:tagliatelle // External API format
+	SevenDay          *apiWindow `json:"seven_day"`            //nolint:tagliatelle // External API format
+	SevenDayOpus      *apiWindow `json:"seven_day_opus"`       //nolint:tagliatelle // External API format
+	SevenDaySonnet    *apiWindow `json:"seven_day_sonnet"`     //nolint:tagliatelle // External API format
+	SevenDayCowork    *apiWindow `json:"seven_day_cowork"`     //nolint:tagliatelle // External API format
+	SevenDayOAuthApps *apiWindow `json:"seven_day_oauth_apps"` //nolint:tagliatelle // External API format
 	ExtraUsage        *struct {
-		IsEnabled    bool    `json:"is_enabled"`
-		MonthlyLimit float64 `json:"monthly_limit"`
-		UsedCredits  float64 `json:"used_credits"`
-	} `json:"extra_usage"`
+		IsEnabled    bool    `json:"is_enabled"`    //nolint:tagliatelle // External API format
+		MonthlyLimit float64 `json:"monthly_limit"` //nolint:tagliatelle // External API format
+		UsedCredits  float64 `json:"used_credits"`  //nolint:tagliatelle // External API format
+	} `json:"extra_usage"` //nolint:tagliatelle // External API format
 	Error *struct {
 		Type string `json:"type"`
 	} `json:"error"`
@@ -68,7 +68,7 @@ type apiResponse struct {
 // apiWindow represents a single window in the API response.
 type apiWindow struct {
 	Utilization float64 `json:"utilization"`
-	ResetsAt    string  `json:"resets_at"`
+	ResetsAt    string  `json:"resets_at"` //nolint:tagliatelle // External API format
 }
 
 // Fetch retrieves quota usage from Anthropic API (with caching).

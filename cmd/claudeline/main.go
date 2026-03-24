@@ -27,7 +27,7 @@ var (
 
 type stdinRateWindow struct {
 	UsedPercentage float64 `json:"used_percentage"` //nolint:tagliatelle // External API format
-	ResetsAt       float64 `json:"resets_at"`        //nolint:tagliatelle // External API format
+	ResetsAt       float64 `json:"resets_at"`       //nolint:tagliatelle // External API format
 }
 
 type stdinData struct {
