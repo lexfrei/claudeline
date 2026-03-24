@@ -498,7 +498,7 @@ func TestBuildStatuslineNoCost(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cfg := defaultCfg()
-	cfg.Segments.Cost = false
+	cfg.Segments.Cost = config.CostOff
 
 	got := buildStatusline([]byte(`{}`), cfg)
 
@@ -536,7 +536,7 @@ func TestBuildStatuslineAllDisabled(t *testing.T) {
 
 	cfg := defaultCfg()
 	cfg.Segments.Model = false
-	cfg.Segments.Cost = false
+	cfg.Segments.Cost = config.CostOff
 	cfg.Segments.Status = false
 	cfg.Segments.Context = false
 	cfg.Segments.Compactions = false
@@ -569,7 +569,7 @@ func TestNewRootCmdWithFlags(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-cost", "--config", "/nonexistent/config.toml"})
+	cmd.SetArgs([]string{"--no-model", "--cost", "false", "--config", "/nonexistent/config.toml"})
 	cmd.SetIn(strings.NewReader(`{}`))
 
 	err := cmd.Execute()
@@ -645,7 +645,7 @@ func TestApplyFlagOverrides(t *testing.T) {
 		t.Error("expected per-model quota enabled by flag")
 	}
 
-	if !cfg.Segments.Cost {
+	if cfg.Segments.Cost == config.CostOff {
 		t.Error("expected cost still enabled")
 	}
 

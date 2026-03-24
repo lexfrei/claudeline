@@ -14,17 +14,39 @@ const (
 	defaultStatusTTL = 15 * time.Second
 )
 
+// Cost mode values.
+const (
+	CostAuto = "auto"
+	CostOn   = "true"
+	CostOff  = "false"
+)
+
+// NormalizeCostMode converts various user inputs to a canonical cost mode.
+// Accepts: "auto", "true"/"1"/"on", "false"/"0"/"off". Returns "" for unknown values.
+func NormalizeCostMode(raw string) string {
+	switch raw {
+	case CostAuto, "":
+		return CostAuto
+	case "true", "1", "on":
+		return CostOn
+	case "false", "0", "off":
+		return CostOff
+	default:
+		return ""
+	}
+}
+
 // Segments controls which statusline segments are displayed.
 type Segments struct {
-	Model         bool `mapstructure:"model"`
-	Cost          bool `mapstructure:"cost"`
-	Status        bool `mapstructure:"status"`
-	Context       bool `mapstructure:"context"`
-	Compactions   bool `mapstructure:"compactions"`
-	Quota         bool `mapstructure:"quota"`
-	PerModelQuota bool `mapstructure:"per_model_quota"`
-	Credits       bool `mapstructure:"credits"`
-	OffPeak       bool `mapstructure:"offpeak"`
+	Model         bool   `mapstructure:"model"`
+	Cost          string `mapstructure:"cost"`
+	Status        bool   `mapstructure:"status"`
+	Context       bool   `mapstructure:"context"`
+	Compactions   bool   `mapstructure:"compactions"`
+	Quota         bool   `mapstructure:"quota"`
+	PerModelQuota bool   `mapstructure:"per_model_quota"`
+	Credits       bool   `mapstructure:"credits"`
+	OffPeak       bool   `mapstructure:"offpeak"`
 }
 
 // Cache controls cache TTL durations.
@@ -45,7 +67,7 @@ func Defaults() Config {
 	return Config{
 		Segments: Segments{
 			Model:       true,
-			Cost:        true,
+			Cost:        CostAuto,
 			Status:      true,
 			Context:     true,
 			Compactions: true,
@@ -87,12 +109,19 @@ func Load(configPath string) Config {
 		return Defaults()
 	}
 
+	cfg.Segments.Cost = NormalizeCostMode(cfg.Segments.Cost)
+	if cfg.Segments.Cost == "" {
+		fmt.Fprintf(os.Stderr, "claudeline: invalid cost mode %q, using auto\n", viperInstance.GetString("segments.cost"))
+
+		cfg.Segments.Cost = CostAuto
+	}
+
 	return cfg
 }
 
 func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.model", true)
-	viperInstance.SetDefault("segments.cost", true)
+	viperInstance.SetDefault("segments.cost", CostAuto)
 	viperInstance.SetDefault("segments.status", true)
 	viperInstance.SetDefault("segments.context", true)
 	viperInstance.SetDefault("segments.compactions", true)

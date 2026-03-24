@@ -95,7 +95,7 @@ func newRootCmd() *cobra.Command {
 	flags := rootCmd.PersistentFlags()
 	flags.StringVar(&configPath, "config", defaultConfigPath(), "config file path")
 	flags.Bool("no-model", false, "disable model segment")
-	flags.Bool("no-cost", false, "disable cost segment")
+	flags.String("cost", "", "cost segment mode: auto (default), true, false")
 	flags.Bool("no-status", false, "disable status segment")
 	flags.Bool("no-context", false, "disable context segment")
 	flags.Bool("no-compactions", false, "disable compactions segment")
@@ -113,8 +113,10 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 		cfg.Segments.Model = false
 	}
 
-	if flagSet(cmd, "no-cost") {
-		cfg.Segments.Cost = false
+	if flagSet(cmd, "cost") {
+		if val, _ := cmd.PersistentFlags().GetString("cost"); val != "" {
+			cfg.Segments.Cost = val
+		}
 	}
 
 	if flagSet(cmd, "no-status") {
@@ -182,7 +184,7 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 		segments = append(segments, "🤖 "+model)
 	}
 
-	if cfg.Segments.Cost {
+	if shouldShowCost(cfg.Segments.Cost, data.RateLimits.FiveHour != nil || data.RateLimits.SevenDay != nil) {
 		segments = append(segments, fmt.Sprintf("💰 $%.2f", data.Cost.TotalCostUSD))
 	}
 
@@ -207,6 +209,19 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	}
 
 	return fmtutil.JoinPipe(segments)
+}
+
+// shouldShowCost determines whether to display the cost segment.
+// In "auto" mode, cost is hidden for subscribers (who have rate_limits).
+func shouldShowCost(mode string, isSubscriber bool) bool {
+	switch mode {
+	case config.CostOn:
+		return true
+	case config.CostOff:
+		return false
+	default: // auto
+		return !isSubscriber
+	}
 }
 
 // stdinRateWindowToQuota converts a stdin rate limit window to a fmtutil.QuotaWindow.

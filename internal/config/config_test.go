@@ -16,8 +16,8 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected model segment enabled by default")
 	}
 
-	if !cfg.Segments.Cost {
-		t.Error("expected cost segment enabled by default")
+	if cfg.Segments.Cost != CostAuto {
+		t.Errorf("expected cost segment auto by default, got %q", cfg.Segments.Cost)
 	}
 
 	if !cfg.Segments.Status {
@@ -58,7 +58,7 @@ func TestLoadMissingFile(t *testing.T) {
 
 	cfg := Load("/nonexistent/config.toml")
 
-	if !cfg.Segments.Model || !cfg.Segments.Cost {
+	if !cfg.Segments.Model || cfg.Segments.Cost != CostAuto {
 		t.Error("expected defaults when config file is missing")
 	}
 }
@@ -93,8 +93,8 @@ status = false
 		t.Error("expected model segment enabled (not in config)")
 	}
 
-	if cfg.Segments.Cost {
-		t.Error("expected cost segment disabled")
+	if cfg.Segments.Cost != CostOff {
+		t.Errorf("expected cost segment off, got %q", cfg.Segments.Cost)
 	}
 
 	if cfg.Segments.Status {
@@ -136,7 +136,7 @@ status_ttl = "30s"
 
 	cfg := Load(configPath)
 
-	if cfg.Segments.Model || cfg.Segments.Cost || cfg.Segments.Status ||
+	if cfg.Segments.Model || cfg.Segments.Cost != CostOff || cfg.Segments.Status ||
 		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota ||
 		cfg.Segments.Credits || cfg.Segments.OffPeak {
 		t.Error("expected all segments disabled")
