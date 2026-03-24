@@ -166,6 +166,115 @@ func TestLoadInvalidTOML(t *testing.T) {
 	}
 }
 
+func TestValidateGoodConfig(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+model = true
+cost = "auto"
+status = false
+
+[cache]
+usage_ttl = "5m"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) != 0 {
+		t.Errorf("expected no problems, got %v", problems)
+	}
+}
+
+func TestValidateUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+mdl = true
+cst = "auto"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) < 2 {
+		t.Errorf("expected at least 2 problems for typos, got %v", problems)
+	}
+}
+
+func TestValidateBadCostMode(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+cost = "audo"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+
+	found := false
+
+	for _, p := range problems {
+		if p == `segments.cost: unknown value "audo" (expected auto, true, or false)` {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("expected cost validation error, got %v", problems)
+	}
+}
+
+func TestValidateBadBoolValue(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+model = "yes"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) == 0 {
+		t.Error("expected validation error for model = \"yes\"")
+	}
+}
+
+func TestValidateEmptyPath(t *testing.T) {
+	t.Parallel()
+
+	problems := Validate("")
+	if problems != nil {
+		t.Errorf("expected nil for empty path, got %v", problems)
+	}
+}
+
+func TestValidateMissingFile(t *testing.T) {
+	t.Parallel()
+
+	problems := Validate("/nonexistent/config.toml")
+	if len(problems) != 1 {
+		t.Errorf("expected 1 problem for missing file, got %v", problems)
+	}
+}
+
 func TestLoadUnmarshalError(t *testing.T) {
 	t.Parallel()
 

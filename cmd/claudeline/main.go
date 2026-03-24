@@ -105,7 +105,31 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("no-credits", false, "disable credits segment (only with --mac-insecure)")
 	flags.Bool("no-offpeak", false, "disable off-peak promotion indicators")
 
+	rootCmd.AddCommand(newValidateCmd(&configPath))
+
 	return rootCmd
+}
+
+func newValidateCmd(configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate",
+		Short: "Validate config file",
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
+			problems := config.Validate(*configPath)
+			if len(problems) == 0 {
+				fmt.Println("config ok")
+
+				return
+			}
+
+			for _, p := range problems {
+				fmt.Fprintf(os.Stderr, "error: %s\n", p)
+			}
+
+			os.Exit(1)
+		},
+	}
 }
 
 func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
