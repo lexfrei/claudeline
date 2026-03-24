@@ -1,16 +1,10 @@
 # claudeline
 
 [![CI](https://github.com/lexfrei/claudeline/actions/workflows/ci.yaml/badge.svg)](https://github.com/lexfrei/claudeline/actions/workflows/ci.yaml)
-[![Go](https://img.shields.io/github/go-mod/go-version/lexfrei/claudeline)](https://go.dev/)
+[![Go](https://img.shields.io/github/go-mod-go-version/lexfrei/claudeline)](https://go.dev/)
 [![License](https://img.shields.io/github/license/lexfrei/claudeline)](LICENSE)
 
-Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) showing live quota usage from the Anthropic API.
-
-> **⚠️ claudeline uses an undocumented Anthropic API.** If you encounter an unexpected error or status message, please [open an issue](https://github.com/lexfrei/claudeline/issues/new) with the error text — it helps us handle more edge cases!
-
-## Known limitations
-
-The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — roughly 5 requests per [Valve Time](https://developer.valvesoftware.com/wiki/Valve_Time) window before it starts returning HTTP 429. claudeline caches **successful** usage API responses for **10 minutes** by default to stay within this budget. Error responses are handled separately: HTTP 429 respects the server's `Retry-After` header (plus a 5-second buffer), and HTTP 401 is cached by token hash until the token changes (e.g., after `claude login`). Other data (model, cost, context) comes from Claude Code stdin and is always fresh. You can tune `usage_ttl` in the config, but lower values will burn through the rate limit faster.
+Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) showing live quota usage directly from stdin data.
 
 ## Example output
 
@@ -19,7 +13,7 @@ The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — rough
 ```
 
 ```text
-🤖 Claude | 💰 $0.00 | ⚠️ degraded | 🧠 67% | 🔄 2 | 🟠 7d: 74% (1d 17h) | 🔴 5h: 91% (27m) | 💳 $12/$100
+🤖 Claude | 💰 $0.00 | ⚠️ degraded | 🧠 67% | 🔄 2 | 🟠 7d: 74% (1d 17h) | 🔴 5h: 91% (27m)
 ```
 
 ## Segments
@@ -33,11 +27,6 @@ The Anthropic usage API (`/api/oauth/usage`) has a very low rate limit — rough
 | 🔄 Compactions | Number of context compactions in current session |
 | 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
 | 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (⬆ during off-peak promotions) |
-| 🟢/🟡/🟠/🔴 7d-opus | Per-model 7-day Opus quota (opt-in via `--per-model-quota`) |
-| 🟢/🟡/🟠/🔴 7d-sonnet | Per-model 7-day Sonnet quota (opt-in via `--per-model-quota`) |
-| 🟢/🟡/🟠/🔴 7d-cowork | Per-model 7-day cowork quota (opt-in via `--per-model-quota`) |
-| 🟢/🟡/🟠/🔴 7d-oauth | Per-model 7-day OAuth apps quota (opt-in via `--per-model-quota`) |
-| 💳 Credits | Monthly extra credit usage (only shown when active) |
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
 
@@ -54,8 +43,7 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 
 ## Requirements
 
-- **macOS only** (uses macOS Keychain for OAuth token storage)
-- Claude Code with OAuth login (`claude login`)
+- Claude Code v2.1.80+ (provides `rate_limits` in statusline stdin)
 
 ## Installation
 
@@ -101,16 +89,13 @@ status = true
 context = true
 compactions = true
 quota = true
-per_model_quota = false
-credits = true
 offpeak = true
 
 [cache]
-usage_ttl = "10m"
 status_ttl = "15s"
 ```
 
-Set any segment to `false` to hide it. Cache TTLs control how often API data is refreshed.
+Set any segment to `false` to hide it.
 
 ### CLI flags
 
@@ -121,7 +106,35 @@ claudeline --no-cost --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--per-model-quota`, `--no-credits`, `--no-offpeak`.
+Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`.
+
+## Advanced: `--mac-insecure` mode
+
+For additional data not available in stdin, claudeline can access the Anthropic usage API directly via macOS Keychain. This gives you:
+
+- Per-model 7-day quotas (Opus, Sonnet, Cowork, OAuth apps)
+- Extra credit usage (💳 segment)
+
+**Security note:** this mode reads your OAuth token from macOS Keychain. Only enable it if you understand the implications.
+
+```bash
+claudeline --mac-insecure --per-model-quota
+```
+
+```toml
+mac_insecure = true
+
+[segments]
+per_model_quota = true
+credits = true
+
+[cache]
+usage_ttl = "10m"
+```
+
+Additional flags with `--mac-insecure`: `--per-model-quota`, `--no-credits`.
+
+**Known limitations of `--mac-insecure`:** the Anthropic usage API has a very low rate limit (~5 requests per window). Responses are cached for 10 minutes by default (`usage_ttl`). macOS only.
 
 ## License
 
