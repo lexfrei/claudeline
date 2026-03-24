@@ -35,8 +35,9 @@ type Cache struct {
 
 // Config holds all claudeline configuration.
 type Config struct {
-	Segments Segments `mapstructure:"segments"`
-	Cache    Cache    `mapstructure:"cache"`
+	Segments    Segments `mapstructure:"segments"`
+	Cache       Cache    `mapstructure:"cache"`
+	MacInsecure bool     `mapstructure:"mac_insecure"`
 }
 
 // Defaults returns a Config with all segments enabled and default TTLs.
@@ -99,6 +100,7 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.per_model_quota", false)
 	viperInstance.SetDefault("segments.credits", true)
 	viperInstance.SetDefault("segments.offpeak", true)
+	viperInstance.SetDefault("mac_insecure", false)
 	viperInstance.SetDefault("cache.usage_ttl", defaultUsageTTL)
 	viperInstance.SetDefault("cache.status_ttl", defaultStatusTTL)
 }

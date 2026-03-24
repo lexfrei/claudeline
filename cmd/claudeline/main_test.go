@@ -25,6 +25,13 @@ func defaultCfg() *config.Config {
 	return &cfg
 }
 
+func insecureCfg() *config.Config {
+	cfg := config.Defaults()
+	cfg.MacInsecure = true
+
+	return &cfg
+}
+
 func setupTestEnv(t *testing.T) func() {
 	t.Helper()
 
@@ -83,8 +90,9 @@ func TestBuildStatuslineMinimal(t *testing.T) {
 		t.Errorf("expected zero cost, got %q", got)
 	}
 
-	if !strings.Contains(got, "⏳") {
-		t.Errorf("expected placeholder, got %q", got)
+	// In default mode (no --mac-insecure), no rate_limits in stdin = no quota segments.
+	if strings.Contains(got, "⏳") || strings.Contains(got, "7d") || strings.Contains(got, "5h") {
+		t.Errorf("expected no quota segments without rate_limits in stdin, got %q", got)
 	}
 }
 
@@ -254,7 +262,7 @@ func TestAppendUsageSegmentsLoginNeeded(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "⚠️ /login needed") {
@@ -285,7 +293,7 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if strings.Contains(joined, "/login needed") {
@@ -319,7 +327,7 @@ func TestAppendUsageSegmentsSuccess(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "7d: 45%") {
@@ -355,10 +363,10 @@ func TestAppendUsageSegmentsPerModel(t *testing.T) {
 		}, nil
 	}
 
-	cfg := defaultCfg()
+	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = true
 
-	segments := appendUsageSegments(nil, cfg)
+	segments := appendUsageSegments(nil, &stdinData{}, cfg)
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "7d: 45%") {
@@ -382,7 +390,7 @@ func TestAppendUsageSegmentsPerModel(t *testing.T) {
 	}
 
 	// Verify per-model windows are hidden by default.
-	segmentsDefault := appendUsageSegments(nil, defaultCfg())
+	segmentsDefault := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joinedDefault := strings.Join(segmentsDefault, " | ")
 
 	if strings.Contains(joinedDefault, "7d-opus") {
@@ -506,6 +514,8 @@ func TestNewRootCmdWithConfigFile(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	configContent := `
+mac_insecure = true
+
 [segments]
 model = false
 
@@ -536,9 +546,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
+	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -568,6 +578,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 
 	if cfg.Segments.OffPeak {
 		t.Error("expected offpeak disabled by flag")
+	}
+
+	if !cfg.MacInsecure {
+		t.Error("expected mac-insecure enabled by flag")
 	}
 }
 
@@ -660,7 +674,7 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "⬆") {
@@ -679,10 +693,10 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 	}
 
 	// Verify indicators are absent when offpeak is disabled.
-	cfg := defaultCfg()
+	cfg := insecureCfg()
 	cfg.Segments.OffPeak = false
 
-	segmentsDisabled := appendUsageSegments(nil, cfg)
+	segmentsDisabled := appendUsageSegments(nil, &stdinData{}, cfg)
 	joinedDisabled := strings.Join(segmentsDisabled, " | ")
 
 	if strings.Contains(joinedDisabled, "⬆") {
