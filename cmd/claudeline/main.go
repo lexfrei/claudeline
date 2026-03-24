@@ -198,7 +198,7 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 	}
 
 	type labeledWindow struct {
-		win   *usage.QuotaWindow
+		win   *fmtutil.QuotaWindow
 		label string
 	}
 
@@ -218,7 +218,7 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
 		}
 	}
 
@@ -227,7 +227,7 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 
 func appendRateLimitSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
 	lastGood := usage.FetchLastGood()
-	segments = append(segments, usage.FormatRateLimitSegment(usage.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
+	segments = append(segments, fmtutil.FormatRateLimitSegment(fmtutil.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
 
 	if cfg.Segments.Quota {
 		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
@@ -236,9 +236,9 @@ func appendRateLimitSegments(segments []string, cfg *config.Config, promo promot
 	return segments
 }
 
-func appendQuotaWindows(segments []string, data *usage.Data, perModel bool, promo promotion.Status) []string {
+func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, promo promotion.Status) []string {
 	type labeledWindow struct {
-		win   *usage.QuotaWindow
+		win   *fmtutil.QuotaWindow
 		label string
 	}
 
@@ -258,7 +258,7 @@ func appendQuotaWindows(segments []string, data *usage.Data, perModel bool, prom
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
 		}
 	}
 

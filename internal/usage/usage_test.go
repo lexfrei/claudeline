@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +47,7 @@ func TestParseBody(t *testing.T) {
 		t.Error("expected Extra to be nil")
 	}
 
-	if int(data.FiveHour.Utilization+halfRound) != 31 {
+	if int(data.FiveHour.Utilization+0.5) != 31 {
 		t.Errorf("FiveHour utilization = %.1f, want ~30.5", data.FiveHour.Utilization)
 	}
 }
@@ -75,7 +74,7 @@ func TestParseBodyPerModelWindows(t *testing.T) {
 		t.Fatal("expected SevenDayOpus to be set")
 	}
 
-	if int(data.SevenDayOpus.Utilization+halfRound) != 13 {
+	if int(data.SevenDayOpus.Utilization+0.5) != 13 {
 		t.Errorf("SevenDayOpus utilization = %.1f, want ~12.5", data.SevenDayOpus.Utilization)
 	}
 
@@ -83,7 +82,7 @@ func TestParseBodyPerModelWindows(t *testing.T) {
 		t.Fatal("expected SevenDaySonnet to be set")
 	}
 
-	if int(data.SevenDaySonnet.Utilization+halfRound) != 79 {
+	if int(data.SevenDaySonnet.Utilization+0.5) != 79 {
 		t.Errorf("SevenDaySonnet utilization = %.1f, want ~78.9", data.SevenDaySonnet.Utilization)
 	}
 
@@ -95,7 +94,7 @@ func TestParseBodyPerModelWindows(t *testing.T) {
 		t.Fatal("expected SevenDayOAuthApps to be set")
 	}
 
-	if int(data.SevenDayOAuthApps.Utilization+halfRound) != 5 {
+	if int(data.SevenDayOAuthApps.Utilization+0.5) != 5 {
 		t.Errorf("SevenDayOAuthApps utilization = %.1f, want ~5.0", data.SevenDayOAuthApps.Utilization)
 	}
 }
@@ -201,186 +200,6 @@ func TestParseWindowPastReset(t *testing.T) {
 
 	if got.RemainingMinutes != 0 {
 		t.Errorf("expected 0 remaining, got %d", got.RemainingMinutes)
-	}
-}
-
-func TestFormatQuotaWindow(t *testing.T) {
-	t.Parallel()
-
-	win := &QuotaWindow{
-		Utilization:      45.3,
-		TotalMinutes:     10080,
-		RemainingMinutes: 6857,
-	}
-
-	got := FormatQuotaWindow(win, "7d", "")
-	if got == "" {
-		t.Error("FormatQuotaWindow returned empty string")
-	}
-
-	if !strings.Contains(got, "7d") || !strings.Contains(got, "45%") {
-		t.Errorf("FormatQuotaWindow = %q, missing expected content", got)
-	}
-}
-
-func TestFindExhaustedWindow(t *testing.T) {
-	t.Parallel()
-
-	got := FindExhaustedWindow(&Data{
-		FiveHour: &QuotaWindow{
-			Utilization:      88,
-			RemainingMinutes: 45,
-		},
-		SevenDay: &QuotaWindow{
-			Utilization:      99,
-			RemainingMinutes: 125,
-		},
-	}, false)
-
-	if got == nil {
-		t.Fatal("expected non-nil ExhaustedWindow")
-	}
-
-	if got.Name != "7d" {
-		t.Errorf("Name = %q, want %q", got.Name, "7d")
-	}
-
-	if got.Minutes != 125 {
-		t.Errorf("Minutes = %d, want %d", got.Minutes, 125)
-	}
-}
-
-func TestFindExhaustedWindowFiveHour(t *testing.T) {
-	t.Parallel()
-
-	got := FindExhaustedWindow(&Data{
-		FiveHour: &QuotaWindow{
-			Utilization:      100,
-			RemainingMinutes: 30,
-		},
-		SevenDay: &QuotaWindow{
-			Utilization:      50,
-			RemainingMinutes: 125,
-		},
-	}, false)
-
-	if got == nil {
-		t.Fatal("expected non-nil ExhaustedWindow")
-	}
-
-	if got.Name != "5h" {
-		t.Errorf("Name = %q, want %q", got.Name, "5h")
-	}
-
-	if got.Minutes != 30 {
-		t.Errorf("Minutes = %d, want %d", got.Minutes, 30)
-	}
-}
-
-func TestFindExhaustedWindowPerModel(t *testing.T) {
-	t.Parallel()
-
-	data := &Data{
-		SevenDay: &QuotaWindow{
-			Utilization:      50,
-			RemainingMinutes: 125,
-		},
-		SevenDayOpus: &QuotaWindow{
-			Utilization:      100,
-			RemainingMinutes: 60,
-		},
-	}
-
-	// With perModel enabled, per-model window is found.
-	got := FindExhaustedWindow(data, true)
-
-	if got == nil {
-		t.Fatal("expected non-nil ExhaustedWindow")
-	}
-
-	if got.Name != "7d-opus" {
-		t.Errorf("Name = %q, want %q", got.Name, "7d-opus")
-	}
-
-	if got.Minutes != 60 {
-		t.Errorf("Minutes = %d, want %d", got.Minutes, 60)
-	}
-
-	// With perModel disabled, per-model window is ignored.
-	gotDisabled := FindExhaustedWindow(data, false)
-
-	if gotDisabled != nil {
-		t.Errorf("expected nil when perModel is false, got %+v", gotDisabled)
-	}
-}
-
-func TestFindExhaustedWindowNil(t *testing.T) {
-	t.Parallel()
-
-	got := FindExhaustedWindow(nil, false)
-	if got != nil {
-		t.Error("expected nil for nil data")
-	}
-}
-
-func TestFindExhaustedWindowNoExhausted(t *testing.T) {
-	t.Parallel()
-
-	got := FindExhaustedWindow(&Data{
-		FiveHour: &QuotaWindow{
-			Utilization:      50,
-			RemainingMinutes: 45,
-		},
-		SevenDay: &QuotaWindow{
-			Utilization:      60,
-			RemainingMinutes: 125,
-		},
-	}, false)
-
-	if got != nil {
-		t.Error("expected nil when no window is exhausted")
-	}
-}
-
-func TestFormatRateLimitSegment(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    *ExhaustedWindow
-		expected string
-	}{
-		{
-			name:     "nil window",
-			input:    nil,
-			expected: "⛔ limit hit",
-		},
-		{
-			name:     "5h window with time",
-			input:    &ExhaustedWindow{Name: "5h", Minutes: 134},
-			expected: "⛔ 5h limit hit (2h 14m)",
-		},
-		{
-			name:     "7d window with time",
-			input:    &ExhaustedWindow{Name: "7d", Minutes: 1440},
-			expected: "⛔ 7d limit hit (1d 0h)",
-		},
-		{
-			name:     "window with zero minutes",
-			input:    &ExhaustedWindow{Name: "5h", Minutes: 0},
-			expected: "⛔ 5h limit hit",
-		},
-	}
-
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := FormatRateLimitSegment(testCase.input)
-			if got != testCase.expected {
-				t.Errorf("FormatRateLimitSegment() = %q, want %q", got, testCase.expected)
-			}
-		})
 	}
 }
 
@@ -1002,7 +821,7 @@ func TestFetchWithReal200Response(t *testing.T) {
 		t.Fatal("expected SevenDay to be set")
 	}
 
-	if int(data.SevenDay.Utilization+halfRound) != 99 {
+	if int(data.SevenDay.Utilization+0.5) != 99 {
 		t.Errorf("SevenDay utilization = %.1f, want ~99", data.SevenDay.Utilization)
 	}
 
@@ -1016,7 +835,7 @@ func TestFetchWithReal200Response(t *testing.T) {
 		t.Fatal("expected SevenDaySonnet to be set")
 	}
 
-	if int(data.SevenDaySonnet.Utilization+halfRound) != 2 {
+	if int(data.SevenDaySonnet.Utilization+0.5) != 2 {
 		t.Errorf("SevenDaySonnet utilization = %.1f, want ~2", data.SevenDaySonnet.Utilization)
 	}
 

@@ -1,3 +1,4 @@
+// Package usage provides access to the Anthropic quota usage API.
 package usage
 
 import (
@@ -23,12 +24,6 @@ const (
 	apiURL     = "https://api.anthropic.com/api/oauth/usage"
 	apiTimeout = 3 * time.Second
 
-	fiveHourWindowMinutes = 300
-	sevenDayWindowMinutes = 10_080
-	exhaustedThresholdPct = 99
-
-	halfRound = 0.5
-
 	retryAfterBuffer         = 5 * time.Second
 	defaultRetryAfterSeconds = 30
 	authFailTTL              = 1 * time.Hour
@@ -52,14 +47,38 @@ var AuthFailPath = "/tmp/claude-usage-auth-failed"
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
 
+// apiResponse mirrors the JSON structure from the Anthropic usage API.
+type apiResponse struct {
+	FiveHour          *apiWindow `json:"five_hour"`
+	SevenDay          *apiWindow `json:"seven_day"`
+	SevenDayOpus      *apiWindow `json:"seven_day_opus"`
+	SevenDaySonnet    *apiWindow `json:"seven_day_sonnet"`
+	SevenDayCowork    *apiWindow `json:"seven_day_cowork"`
+	SevenDayOAuthApps *apiWindow `json:"seven_day_oauth_apps"`
+	ExtraUsage        *struct {
+		IsEnabled    bool    `json:"is_enabled"`
+		MonthlyLimit float64 `json:"monthly_limit"`
+		UsedCredits  float64 `json:"used_credits"`
+	} `json:"extra_usage"`
+	Error *struct {
+		Type string `json:"type"`
+	} `json:"error"`
+}
+
+// apiWindow represents a single window in the API response.
+type apiWindow struct {
+	Utilization float64 `json:"utilization"`
+	ResetsAt    string  `json:"resets_at"`
+}
+
 // Fetch retrieves quota usage from Anthropic API (with caching).
-func Fetch() (*Data, error) {
+func Fetch() (*fmtutil.Data, error) {
 	if cached, ok := cache.Read(CachePath, CacheTTL); ok {
 		return ParseBody(cached)
 	}
 
 	if retryAfterActive() {
-		return &Data{ErrorType: "rate_limit_error"}, nil
+		return &fmtutil.Data{ErrorType: "rate_limit_error"}, nil
 	}
 
 	token, err := keychain.GetFn()
@@ -72,7 +91,7 @@ func Fetch() (*Data, error) {
 	}
 
 	if authFailedForToken(token) {
-		return &Data{ErrorType: "authentication_error"}, nil
+		return &fmtutil.Data{ErrorType: "authentication_error"}, nil
 	}
 
 	resp, err := HTTPGetFn(apiURL, map[string]string{
@@ -86,13 +105,13 @@ func Fetch() (*Data, error) {
 	if resp.StatusCode == http.StatusTooManyRequests {
 		writeRetryAfter(resp.Header)
 
-		return &Data{ErrorType: "rate_limit_error"}, nil
+		return &fmtutil.Data{ErrorType: "rate_limit_error"}, nil
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		writeAuthFailed(token)
 
-		return &Data{ErrorType: "authentication_error"}, nil
+		return &fmtutil.Data{ErrorType: "authentication_error"}, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -169,7 +188,7 @@ func hashToken(token string) string {
 }
 
 // ParseBody parses the usage API response body.
-func ParseBody(body []byte) (*Data, error) {
+func ParseBody(body []byte) (*fmtutil.Data, error) {
 	var resp apiResponse
 
 	unmarshalErr := json.Unmarshal(body, &resp)
@@ -178,39 +197,39 @@ func ParseBody(body []byte) (*Data, error) {
 	}
 
 	if resp.Error != nil {
-		return &Data{ErrorType: resp.Error.Type}, nil
+		return &fmtutil.Data{ErrorType: resp.Error.Type}, nil
 	}
 
 	cache.Write(LastGoodCachePath, body)
 
-	result := &Data{}
+	result := &fmtutil.Data{}
 
 	if resp.FiveHour != nil {
-		result.FiveHour = parseWindow(resp.FiveHour, fiveHourWindowMinutes)
+		result.FiveHour = parseWindow(resp.FiveHour, fmtutil.FiveHourWindowMinutes)
 	}
 
 	if resp.SevenDay != nil {
-		result.SevenDay = parseWindow(resp.SevenDay, sevenDayWindowMinutes)
+		result.SevenDay = parseWindow(resp.SevenDay, fmtutil.SevenDayWindowMinutes)
 	}
 
 	if resp.SevenDayOpus != nil {
-		result.SevenDayOpus = parseWindow(resp.SevenDayOpus, sevenDayWindowMinutes)
+		result.SevenDayOpus = parseWindow(resp.SevenDayOpus, fmtutil.SevenDayWindowMinutes)
 	}
 
 	if resp.SevenDaySonnet != nil {
-		result.SevenDaySonnet = parseWindow(resp.SevenDaySonnet, sevenDayWindowMinutes)
+		result.SevenDaySonnet = parseWindow(resp.SevenDaySonnet, fmtutil.SevenDayWindowMinutes)
 	}
 
 	if resp.SevenDayCowork != nil {
-		result.SevenDayCowork = parseWindow(resp.SevenDayCowork, sevenDayWindowMinutes)
+		result.SevenDayCowork = parseWindow(resp.SevenDayCowork, fmtutil.SevenDayWindowMinutes)
 	}
 
 	if resp.SevenDayOAuthApps != nil {
-		result.SevenDayOAuthApps = parseWindow(resp.SevenDayOAuthApps, sevenDayWindowMinutes)
+		result.SevenDayOAuthApps = parseWindow(resp.SevenDayOAuthApps, fmtutil.SevenDayWindowMinutes)
 	}
 
 	if resp.ExtraUsage != nil && resp.ExtraUsage.IsEnabled && resp.ExtraUsage.UsedCredits > 0 {
-		result.Extra = &ExtraUsage{
+		result.Extra = &fmtutil.ExtraUsage{
 			MonthlyLimit: resp.ExtraUsage.MonthlyLimit,
 			UsedCredits:  resp.ExtraUsage.UsedCredits,
 		}
@@ -219,7 +238,7 @@ func ParseBody(body []byte) (*Data, error) {
 	return result, nil
 }
 
-func parseWindow(win *apiWindow, totalMinutes int) *QuotaWindow {
+func parseWindow(win *apiWindow, totalMinutes int) *fmtutil.QuotaWindow {
 	resetsAt, err := fmtutil.ParseISOUTC(win.ResetsAt)
 	if err != nil {
 		return nil
@@ -227,7 +246,7 @@ func parseWindow(win *apiWindow, totalMinutes int) *QuotaWindow {
 
 	remaining := max(int(time.Until(resetsAt).Minutes()), 0)
 
-	return &QuotaWindow{
+	return &fmtutil.QuotaWindow{
 		Utilization:      win.Utilization,
 		ResetsAt:         resetsAt,
 		TotalMinutes:     totalMinutes,
@@ -236,7 +255,7 @@ func parseWindow(win *apiWindow, totalMinutes int) *QuotaWindow {
 }
 
 // FetchLastGood returns the last successful usage data (no TTL).
-func FetchLastGood() *Data {
+func FetchLastGood() *fmtutil.Data {
 	body, ok := cache.ReadAny(LastGoodCachePath)
 	if !ok {
 		return nil
@@ -248,89 +267,4 @@ func FetchLastGood() *Data {
 	}
 
 	return data
-}
-
-// FormatStaleQuotaWindow formats a window with ?% but real time and indicator.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: ?% (3h)").
-func FormatStaleQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
-	pct := int(win.Utilization + halfRound)
-	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
-	dur := fmtutil.Duration(win.RemainingMinutes)
-
-	return fmt.Sprintf("%s%s %s: ?%% (%s)", indicator, promoIndicator, label, dur)
-}
-
-// FormatQuotaWindow formats a single quota window for display.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: 12% (4h 30m)").
-func FormatQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
-	pct := int(win.Utilization + halfRound)
-	indicator := fmtutil.RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
-	dur := fmtutil.Duration(win.RemainingMinutes)
-
-	return fmt.Sprintf("%s%s %s: %d%% (%s)", indicator, promoIndicator, label, pct, dur)
-}
-
-// FormatRateLimitSegment formats the explicit exhausted-limit segment.
-func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
-	if exhausted == nil {
-		return "⛔ limit hit"
-	}
-
-	if exhausted.Minutes <= 0 {
-		return fmt.Sprintf("⛔ %s limit hit", exhausted.Name)
-	}
-
-	return fmt.Sprintf("⛔ %s limit hit (%s)", exhausted.Name, fmtutil.Duration(exhausted.Minutes))
-}
-
-// FindExhaustedWindow returns the most saturated active window that is exhausted.
-// When perModel is true, per-model windows (opus, sonnet, cowork, oauth) are included.
-func FindExhaustedWindow(data *Data, perModel bool) *ExhaustedWindow {
-	if data == nil {
-		return nil
-	}
-
-	type windowEntry struct {
-		win  *QuotaWindow
-		name string
-	}
-
-	windows := []windowEntry{
-		{data.FiveHour, "5h"},
-		{data.SevenDay, "7d"},
-	}
-
-	if perModel {
-		windows = append(windows,
-			windowEntry{data.SevenDayOpus, "7d-opus"},
-			windowEntry{data.SevenDaySonnet, "7d-sonnet"},
-			windowEntry{data.SevenDayCowork, "7d-cowork"},
-			windowEntry{data.SevenDayOAuthApps, "7d-oauth"},
-		)
-	}
-
-	var best *ExhaustedWindow
-
-	bestPct := -1
-
-	for _, entry := range windows {
-		if entry.win == nil || entry.win.RemainingMinutes <= 0 {
-			continue
-		}
-
-		pct := int(entry.win.Utilization + halfRound)
-		if pct < exhaustedThresholdPct {
-			continue
-		}
-
-		if pct > bestPct || (pct == bestPct && (best == nil || entry.win.RemainingMinutes < best.Minutes)) {
-			bestPct = pct
-			best = &ExhaustedWindow{
-				Name:    entry.name,
-				Minutes: entry.win.RemainingMinutes,
-			}
-		}
-	}
-
-	return best
 }
