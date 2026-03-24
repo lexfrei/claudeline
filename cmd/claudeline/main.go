@@ -8,9 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/lexfrei/claudeline/internal/compaction"
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/promotion"
@@ -23,6 +25,11 @@ var (
 	commit  = "none"
 )
 
+type stdinRateWindow struct {
+	UsedPercentage float64 `json:"used_percentage"` //nolint:tagliatelle // External API format
+	ResetsAt       float64 `json:"resets_at"`       //nolint:tagliatelle // External API format
+}
+
 type stdinData struct {
 	Model struct {
 		DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
@@ -34,6 +41,10 @@ type stdinData struct {
 		UsedPercentage float64 `json:"used_percentage"` //nolint:tagliatelle // External API format
 	} `json:"context_window"` //nolint:tagliatelle // External API format
 	TranscriptPath string `json:"transcript_path"` //nolint:tagliatelle // External API format
+	RateLimits     struct {
+		FiveHour *stdinRateWindow `json:"five_hour"` //nolint:tagliatelle // External API format
+		SevenDay *stdinRateWindow `json:"seven_day"` //nolint:tagliatelle // External API format
+	} `json:"rate_limits"` //nolint:tagliatelle // External API format
 }
 
 func defaultConfigPath() string {
@@ -73,7 +84,10 @@ func newRootCmd() *cobra.Command {
 		applyFlagOverrides(rootCmd, &cfg)
 
 		status.CacheTTL = cfg.Cache.StatusTTL
-		usage.CacheTTL = cfg.Cache.UsageTTL
+
+		if cfg.MacInsecure {
+			usage.CacheTTL = cfg.Cache.UsageTTL
+		}
 	}
 
 	rootCmd.SetVersionTemplate("claudeline {{.Version}}\n")
@@ -81,16 +95,41 @@ func newRootCmd() *cobra.Command {
 	flags := rootCmd.PersistentFlags()
 	flags.StringVar(&configPath, "config", defaultConfigPath(), "config file path")
 	flags.Bool("no-model", false, "disable model segment")
-	flags.Bool("no-cost", false, "disable cost segment")
+	flags.String("cost", "", "cost segment mode: auto (default), true, false")
 	flags.Bool("no-status", false, "disable status segment")
 	flags.Bool("no-context", false, "disable context segment")
 	flags.Bool("no-compactions", false, "disable compactions segment")
 	flags.Bool("no-quota", false, "disable quota segment")
-	flags.Bool("per-model-quota", false, "enable per-model quota segments (opus, sonnet, etc.)")
-	flags.Bool("no-credits", false, "disable credits segment")
+	flags.Bool("mac-insecure", false, "use macOS Keychain + Anthropic API for per-model quotas and credits")
+	flags.Bool("per-model-quota", false, "enable per-model quota segments (requires --mac-insecure)")
+	flags.Bool("no-credits", false, "disable credits segment (only with --mac-insecure)")
 	flags.Bool("no-offpeak", false, "disable off-peak promotion indicators")
 
+	rootCmd.AddCommand(newValidateCmd(&configPath))
+
 	return rootCmd
+}
+
+func newValidateCmd(configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate",
+		Short: "Validate config file",
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
+			problems := config.Validate(*configPath)
+			if len(problems) == 0 {
+				fmt.Println("config ok")
+
+				return
+			}
+
+			for _, p := range problems {
+				fmt.Fprintf(os.Stderr, "error: %s\n", p)
+			}
+
+			os.Exit(1)
+		},
+	}
 }
 
 func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
@@ -98,8 +137,10 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 		cfg.Segments.Model = false
 	}
 
-	if flagSet(cmd, "no-cost") {
-		cfg.Segments.Cost = false
+	if flagSet(cmd, "cost") {
+		if val, _ := cmd.PersistentFlags().GetString("cost"); val != "" {
+			cfg.Segments.Cost = val
+		}
 	}
 
 	if flagSet(cmd, "no-status") {
@@ -116,6 +157,10 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 
 	if flagSet(cmd, "no-quota") {
 		cfg.Segments.Quota = false
+	}
+
+	if flagSet(cmd, "mac-insecure") {
+		cfg.MacInsecure = true
 	}
 
 	if flagSet(cmd, "per-model-quota") {
@@ -163,7 +208,7 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 		segments = append(segments, "🤖 "+model)
 	}
 
-	if cfg.Segments.Cost {
+	if shouldShowCost(cfg.Segments.Cost, data.RateLimits.FiveHour != nil || data.RateLimits.SevenDay != nil) {
 		segments = append(segments, fmt.Sprintf("💰 $%.2f", data.Cost.TotalCostUSD))
 	}
 
@@ -178,66 +223,59 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	}
 
 	if cfg.Segments.Compactions {
-		if compactions := usage.CountCompactions(data.TranscriptPath); compactions > 0 {
+		if compactions := compaction.CountCompactions(data.TranscriptPath); compactions > 0 {
 			segments = append(segments, fmt.Sprintf("🔄 %d", compactions))
 		}
 	}
 
 	if cfg.Segments.Quota || cfg.Segments.Credits {
-		segments = appendUsageSegments(segments, cfg)
+		segments = appendUsageSegments(segments, &data, cfg)
 	}
 
 	return fmtutil.JoinPipe(segments)
 }
 
-func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.Status) []string {
-	lastGood := usage.FetchLastGood()
-	if lastGood == nil {
-		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+// shouldShowCost determines whether to display the cost segment.
+// In "auto" mode, cost is hidden for subscribers (who have rate_limits).
+func shouldShowCost(mode string, isSubscriber bool) bool {
+	switch mode {
+	case config.CostOn:
+		return true
+	case config.CostOff:
+		return false
+	default: // auto
+		return !isSubscriber
 	}
-
-	type labeledWindow struct {
-		win   *usage.QuotaWindow
-		label string
-	}
-
-	windows := []labeledWindow{
-		{lastGood.SevenDay, "7d"},
-		{lastGood.FiveHour, "5h"},
-	}
-
-	if perModel {
-		windows = append(windows,
-			labeledWindow{lastGood.SevenDayOpus, "7d-opus"},
-			labeledWindow{lastGood.SevenDaySonnet, "7d-sonnet"},
-			labeledWindow{lastGood.SevenDayCowork, "7d-cowork"},
-			labeledWindow{lastGood.SevenDayOAuthApps, "7d-oauth"},
-		)
-	}
-
-	for _, w := range windows {
-		if w.win != nil {
-			segments = append(segments, usage.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
-		}
-	}
-
-	return segments
 }
 
-func appendRateLimitSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
-	lastGood := usage.FetchLastGood()
-	segments = append(segments, usage.FormatRateLimitSegment(usage.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
-
-	if cfg.Segments.Quota {
-		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
+// stdinRateWindowToQuota converts a stdin rate limit window to a fmtutil.QuotaWindow.
+func stdinRateWindowToQuota(win *stdinRateWindow, totalMinutes int) *fmtutil.QuotaWindow {
+	if win == nil {
+		return nil
 	}
 
-	return segments
+	resetsAt := time.Unix(int64(win.ResetsAt), 0)
+	remaining := max(int(time.Until(resetsAt).Minutes()), 0)
+
+	return &fmtutil.QuotaWindow{
+		Utilization:      win.UsedPercentage,
+		ResetsAt:         resetsAt,
+		TotalMinutes:     totalMinutes,
+		RemainingMinutes: remaining,
+	}
 }
 
-func appendQuotaWindows(segments []string, data *usage.Data, perModel bool, promo promotion.Status) []string {
+// buildQuotaFromStdin builds quota data from stdin rate_limits (no API call).
+func buildQuotaFromStdin(data *stdinData) *fmtutil.Data {
+	return &fmtutil.Data{
+		FiveHour: stdinRateWindowToQuota(data.RateLimits.FiveHour, fmtutil.FiveHourWindowMinutes),
+		SevenDay: stdinRateWindowToQuota(data.RateLimits.SevenDay, fmtutil.SevenDayWindowMinutes),
+	}
+}
+
+func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, promo promotion.Status) []string {
 	type labeledWindow struct {
-		win   *usage.QuotaWindow
+		win   *fmtutil.QuotaWindow
 		label string
 	}
 
@@ -257,19 +295,39 @@ func appendQuotaWindows(segments []string, data *usage.Data, perModel bool, prom
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, usage.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
 		}
 	}
 
 	return segments
 }
 
-func appendUsageSegments(segments []string, cfg *config.Config) []string {
+func appendUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	var promo promotion.Status
 	if cfg.Segments.OffPeak {
 		promo = promotion.Current()
 	}
 
+	if cfg.MacInsecure {
+		return appendInsecureUsageSegments(segments, cfg, promo)
+	}
+
+	return appendStdinUsageSegments(segments, data, cfg, promo)
+}
+
+// appendStdinUsageSegments builds quota segments from stdin rate_limits (default, secure path).
+func appendStdinUsageSegments(segments []string, data *stdinData, cfg *config.Config, promo promotion.Status) []string {
+	quotaData := buildQuotaFromStdin(data)
+
+	if cfg.Segments.Quota {
+		segments = appendQuotaWindows(segments, quotaData, false, promo)
+	}
+
+	return segments
+}
+
+// appendInsecureUsageSegments builds quota segments from Anthropic API via macOS Keychain (--mac-insecure).
+func appendInsecureUsageSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
@@ -295,6 +353,51 @@ func appendUsageSegments(segments []string, cfg *config.Config) []string {
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
 		segments = append(segments, fmt.Sprintf("💳 $%.0f/$%.0f",
 			usageData.Extra.UsedCredits, usageData.Extra.MonthlyLimit))
+	}
+
+	return segments
+}
+
+func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.Status) []string {
+	lastGood := usage.FetchLastGood()
+	if lastGood == nil {
+		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+	}
+
+	type labeledWindow struct {
+		win   *fmtutil.QuotaWindow
+		label string
+	}
+
+	windows := []labeledWindow{
+		{lastGood.SevenDay, "7d"},
+		{lastGood.FiveHour, "5h"},
+	}
+
+	if perModel {
+		windows = append(windows,
+			labeledWindow{lastGood.SevenDayOpus, "7d-opus"},
+			labeledWindow{lastGood.SevenDaySonnet, "7d-sonnet"},
+			labeledWindow{lastGood.SevenDayCowork, "7d-cowork"},
+			labeledWindow{lastGood.SevenDayOAuthApps, "7d-oauth"},
+		)
+	}
+
+	for _, w := range windows {
+		if w.win != nil {
+			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+		}
+	}
+
+	return segments
+}
+
+func appendRateLimitSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
+	lastGood := usage.FetchLastGood()
+	segments = append(segments, fmtutil.FormatRateLimitSegment(fmtutil.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
+
+	if cfg.Segments.Quota {
+		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
 	}
 
 	return segments

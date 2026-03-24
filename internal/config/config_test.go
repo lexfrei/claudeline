@@ -16,8 +16,8 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected model segment enabled by default")
 	}
 
-	if !cfg.Segments.Cost {
-		t.Error("expected cost segment enabled by default")
+	if cfg.Segments.Cost != CostAuto {
+		t.Errorf("expected cost segment auto by default, got %q", cfg.Segments.Cost)
 	}
 
 	if !cfg.Segments.Status {
@@ -58,7 +58,7 @@ func TestLoadMissingFile(t *testing.T) {
 
 	cfg := Load("/nonexistent/config.toml")
 
-	if !cfg.Segments.Model || !cfg.Segments.Cost {
+	if !cfg.Segments.Model || cfg.Segments.Cost != CostAuto {
 		t.Error("expected defaults when config file is missing")
 	}
 }
@@ -93,8 +93,8 @@ status = false
 		t.Error("expected model segment enabled (not in config)")
 	}
 
-	if cfg.Segments.Cost {
-		t.Error("expected cost segment disabled")
+	if cfg.Segments.Cost != CostOff {
+		t.Errorf("expected cost segment off, got %q", cfg.Segments.Cost)
 	}
 
 	if cfg.Segments.Status {
@@ -136,7 +136,7 @@ status_ttl = "30s"
 
 	cfg := Load(configPath)
 
-	if cfg.Segments.Model || cfg.Segments.Cost || cfg.Segments.Status ||
+	if cfg.Segments.Model || cfg.Segments.Cost != CostOff || cfg.Segments.Status ||
 		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota ||
 		cfg.Segments.Credits || cfg.Segments.OffPeak {
 		t.Error("expected all segments disabled")
@@ -163,6 +163,115 @@ func TestLoadInvalidTOML(t *testing.T) {
 
 	if !cfg.Segments.Model {
 		t.Error("expected defaults on invalid TOML")
+	}
+}
+
+func TestValidateGoodConfig(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+model = true
+cost = "auto"
+status = false
+
+[cache]
+usage_ttl = "5m"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) != 0 {
+		t.Errorf("expected no problems, got %v", problems)
+	}
+}
+
+func TestValidateUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+mdl = true
+cst = "auto"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) < 2 {
+		t.Errorf("expected at least 2 problems for typos, got %v", problems)
+	}
+}
+
+func TestValidateBadCostMode(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+cost = "audo"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+
+	found := false
+
+	for _, p := range problems {
+		if p == `segments.cost: unknown value "audo" (expected auto, true, or false)` {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("expected cost validation error, got %v", problems)
+	}
+}
+
+func TestValidateBadBoolValue(t *testing.T) {
+	t.Parallel()
+
+	content := `
+[segments]
+model = "yes"
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) == 0 {
+		t.Error("expected validation error for model = \"yes\"")
+	}
+}
+
+func TestValidateEmptyPath(t *testing.T) {
+	t.Parallel()
+
+	problems := Validate("")
+	if problems != nil {
+		t.Errorf("expected nil for empty path, got %v", problems)
+	}
+}
+
+func TestValidateMissingFile(t *testing.T) {
+	t.Parallel()
+
+	problems := Validate("/nonexistent/config.toml")
+	if len(problems) != 1 {
+		t.Errorf("expected 1 problem for missing file, got %v", problems)
 	}
 }
 

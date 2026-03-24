@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -21,6 +22,13 @@ const testToken = "test-token"
 
 func defaultCfg() *config.Config {
 	cfg := config.Defaults()
+
+	return &cfg
+}
+
+func insecureCfg() *config.Config {
+	cfg := config.Defaults()
+	cfg.MacInsecure = true
 
 	return &cfg
 }
@@ -83,8 +91,81 @@ func TestBuildStatuslineMinimal(t *testing.T) {
 		t.Errorf("expected zero cost, got %q", got)
 	}
 
-	if !strings.Contains(got, "⏳") {
-		t.Errorf("expected placeholder, got %q", got)
+	// In default mode (no --mac-insecure), no rate_limits in stdin = no quota segments.
+	if strings.Contains(got, "⏳") || strings.Contains(got, "7d") || strings.Contains(got, "5h") {
+		t.Errorf("expected no quota segments without rate_limits in stdin, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWithStdinRateLimits(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	resetsAt := float64(time.Now().Add(3 * time.Hour).Unix())
+
+	input := fmt.Sprintf(`{
+		"model":{"display_name":"Opus 4.6"},
+		"rate_limits":{
+			"five_hour":{"used_percentage":30,"resets_at":%f},
+			"seven_day":{"used_percentage":55,"resets_at":%f}
+		}
+	}`, resetsAt, resetsAt)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "5h: 30%") {
+		t.Errorf("expected 5h quota from stdin, got %q", got)
+	}
+
+	if !strings.Contains(got, "7d: 55%") {
+		t.Errorf("expected 7d quota from stdin, got %q", got)
+	}
+
+	// Should NOT contain any API-path artifacts.
+	if strings.Contains(got, "⏳") || strings.Contains(got, "💳") || strings.Contains(got, "/login") {
+		t.Errorf("expected no API-path artifacts, got %q", got)
+	}
+}
+
+func TestBuildStatuslineStdinNoRateLimits(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	got := buildStatusline([]byte(`{"model":{"display_name":"Sonnet"}}`), defaultCfg())
+
+	if !strings.Contains(got, "🤖 Sonnet") {
+		t.Errorf("expected model name, got %q", got)
+	}
+
+	// No rate_limits = no quota segments (graceful).
+	if strings.Contains(got, "7d") || strings.Contains(got, "5h") {
+		t.Errorf("expected no quota without rate_limits, got %q", got)
+	}
+}
+
+func TestBuildStatuslineStdinPartialRateLimits(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	resetsAt := float64(time.Now().Add(2 * time.Hour).Unix())
+
+	input := fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":%f}}}`, resetsAt)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "5h: 42%") {
+		t.Errorf("expected 5h quota, got %q", got)
+	}
+
+	// seven_day is absent — should not appear.
+	if strings.Contains(got, "7d") {
+		t.Errorf("expected no 7d without seven_day in stdin, got %q", got)
 	}
 }
 
@@ -254,7 +335,7 @@ func TestAppendUsageSegmentsLoginNeeded(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "⚠️ /login needed") {
@@ -285,7 +366,7 @@ func TestAppendUsageSegmentsRateLimited(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if strings.Contains(joined, "/login needed") {
@@ -319,7 +400,7 @@ func TestAppendUsageSegmentsSuccess(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "7d: 45%") {
@@ -355,10 +436,10 @@ func TestAppendUsageSegmentsPerModel(t *testing.T) {
 		}, nil
 	}
 
-	cfg := defaultCfg()
+	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = true
 
-	segments := appendUsageSegments(nil, cfg)
+	segments := appendUsageSegments(nil, &stdinData{}, cfg)
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "7d: 45%") {
@@ -382,7 +463,7 @@ func TestAppendUsageSegmentsPerModel(t *testing.T) {
 	}
 
 	// Verify per-model windows are hidden by default.
-	segmentsDefault := appendUsageSegments(nil, defaultCfg())
+	segmentsDefault := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joinedDefault := strings.Join(segmentsDefault, " | ")
 
 	if strings.Contains(joinedDefault, "7d-opus") {
@@ -417,7 +498,7 @@ func TestBuildStatuslineNoCost(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cfg := defaultCfg()
-	cfg.Segments.Cost = false
+	cfg.Segments.Cost = config.CostOff
 
 	got := buildStatusline([]byte(`{}`), cfg)
 
@@ -455,7 +536,7 @@ func TestBuildStatuslineAllDisabled(t *testing.T) {
 
 	cfg := defaultCfg()
 	cfg.Segments.Model = false
-	cfg.Segments.Cost = false
+	cfg.Segments.Cost = config.CostOff
 	cfg.Segments.Status = false
 	cfg.Segments.Context = false
 	cfg.Segments.Compactions = false
@@ -488,7 +569,7 @@ func TestNewRootCmdWithFlags(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-cost", "--config", "/nonexistent/config.toml"})
+	cmd.SetArgs([]string{"--no-model", "--cost", "false", "--config", "/nonexistent/config.toml"})
 	cmd.SetIn(strings.NewReader(`{}`))
 
 	err := cmd.Execute()
@@ -506,6 +587,8 @@ func TestNewRootCmdWithConfigFile(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	configContent := `
+mac_insecure = true
+
 [segments]
 model = false
 
@@ -536,9 +619,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
+	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -562,12 +645,16 @@ func TestApplyFlagOverrides(t *testing.T) {
 		t.Error("expected per-model quota enabled by flag")
 	}
 
-	if !cfg.Segments.Cost {
+	if cfg.Segments.Cost == config.CostOff {
 		t.Error("expected cost still enabled")
 	}
 
 	if cfg.Segments.OffPeak {
 		t.Error("expected offpeak disabled by flag")
+	}
+
+	if !cfg.MacInsecure {
+		t.Error("expected mac-insecure enabled by flag")
 	}
 }
 
@@ -660,7 +747,7 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 		}, nil
 	}
 
-	segments := appendUsageSegments(nil, defaultCfg())
+	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
 	joined := strings.Join(segments, " | ")
 
 	if !strings.Contains(joined, "⬆") {
@@ -679,10 +766,10 @@ func TestAppendUsageSegmentsOffPeak(t *testing.T) {
 	}
 
 	// Verify indicators are absent when offpeak is disabled.
-	cfg := defaultCfg()
+	cfg := insecureCfg()
 	cfg.Segments.OffPeak = false
 
-	segmentsDisabled := appendUsageSegments(nil, cfg)
+	segmentsDisabled := appendUsageSegments(nil, &stdinData{}, cfg)
 	joinedDisabled := strings.Join(segmentsDisabled, " | ")
 
 	if strings.Contains(joinedDisabled, "⬆") {
