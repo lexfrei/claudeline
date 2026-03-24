@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -93,6 +94,78 @@ func TestBuildStatuslineMinimal(t *testing.T) {
 	// In default mode (no --mac-insecure), no rate_limits in stdin = no quota segments.
 	if strings.Contains(got, "⏳") || strings.Contains(got, "7d") || strings.Contains(got, "5h") {
 		t.Errorf("expected no quota segments without rate_limits in stdin, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWithStdinRateLimits(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	resetsAt := float64(time.Now().Add(3 * time.Hour).Unix())
+
+	input := fmt.Sprintf(`{
+		"model":{"display_name":"Opus 4.6"},
+		"rate_limits":{
+			"five_hour":{"used_percentage":30,"resets_at":%f},
+			"seven_day":{"used_percentage":55,"resets_at":%f}
+		}
+	}`, resetsAt, resetsAt)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "5h: 30%") {
+		t.Errorf("expected 5h quota from stdin, got %q", got)
+	}
+
+	if !strings.Contains(got, "7d: 55%") {
+		t.Errorf("expected 7d quota from stdin, got %q", got)
+	}
+
+	// Should NOT contain any API-path artifacts.
+	if strings.Contains(got, "⏳") || strings.Contains(got, "💳") || strings.Contains(got, "/login") {
+		t.Errorf("expected no API-path artifacts, got %q", got)
+	}
+}
+
+func TestBuildStatuslineStdinNoRateLimits(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	got := buildStatusline([]byte(`{"model":{"display_name":"Sonnet"}}`), defaultCfg())
+
+	if !strings.Contains(got, "🤖 Sonnet") {
+		t.Errorf("expected model name, got %q", got)
+	}
+
+	// No rate_limits = no quota segments (graceful).
+	if strings.Contains(got, "7d") || strings.Contains(got, "5h") {
+		t.Errorf("expected no quota without rate_limits, got %q", got)
+	}
+}
+
+func TestBuildStatuslineStdinPartialRateLimits(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	resetsAt := float64(time.Now().Add(2 * time.Hour).Unix())
+
+	input := fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":%f}}}`, resetsAt)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "5h: 42%") {
+		t.Errorf("expected 5h quota, got %q", got)
+	}
+
+	// seven_day is absent — should not appear.
+	if strings.Contains(got, "7d") {
+		t.Errorf("expected no 7d without seven_day in stdin, got %q", got)
 	}
 }
 
