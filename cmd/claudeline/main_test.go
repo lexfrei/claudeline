@@ -169,6 +169,56 @@ func TestBuildStatuslineStdinPartialRateLimits(t *testing.T) {
 	}
 }
 
+func TestBuildStatuslineWithWorktree(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "🌿 feat-api") {
+		t.Errorf("expected worktree segment, got %q", got)
+	}
+
+	// Worktree should appear right after model.
+	if !strings.Contains(got, "🤖 Opus 4.6 | 🌿 feat-api") {
+		t.Errorf("expected worktree right after model, got %q", got)
+	}
+}
+
+func TestBuildStatuslineNoWorktreeField(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no worktree segment when field is empty, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWorktreeDisabled(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Worktree = false
+
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), cfg)
+
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no worktree when segment disabled, got %q", got)
+	}
+}
+
 func TestBuildStatuslineWithModel(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
@@ -619,9 +669,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	cmd.SetArgs([]string{"--no-model", "--no-worktree", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-worktree", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -631,6 +681,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 
 	if cfg.Segments.Model {
 		t.Error("expected model disabled by flag")
+	}
+
+	if cfg.Segments.Worktree {
+		t.Error("expected worktree disabled by flag")
 	}
 
 	if cfg.Segments.Quota {
