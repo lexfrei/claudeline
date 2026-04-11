@@ -586,6 +586,7 @@ func TestBuildStatuslineAllDisabled(t *testing.T) {
 
 	cfg := defaultCfg()
 	cfg.Segments.Model = false
+	cfg.Segments.Worktree = false
 	cfg.Segments.Cost = config.CostOff
 	cfg.Segments.Status = false
 	cfg.Segments.Context = false
@@ -593,7 +594,11 @@ func TestBuildStatuslineAllDisabled(t *testing.T) {
 	cfg.Segments.Quota = false
 	cfg.Segments.Credits = false
 
-	got := buildStatusline([]byte(`{}`), cfg)
+	// Use real data for each segment so the disables must actually fire —
+	// an absent field would hide the segment regardless of the config toggle.
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{"git_worktree":"feat-api"},"cost":{"total_cost_usd":1.5},"context_window":{"used_percentage":50}}`
+
+	got := buildStatusline([]byte(input), cfg)
 
 	if got != "" {
 		t.Errorf("expected empty output, got %q", got)

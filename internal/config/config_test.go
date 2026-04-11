@@ -97,6 +97,10 @@ status = false
 		t.Error("expected model segment enabled (not in config)")
 	}
 
+	if !cfg.Segments.Worktree {
+		t.Error("expected worktree segment enabled (not in config)")
+	}
+
 	if cfg.Segments.Cost != CostOff {
 		t.Errorf("expected cost segment off, got %q", cfg.Segments.Cost)
 	}
