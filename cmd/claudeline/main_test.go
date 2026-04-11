@@ -95,6 +95,11 @@ func TestBuildStatuslineMinimal(t *testing.T) {
 	if strings.Contains(got, "⏳") || strings.Contains(got, "7d") || strings.Contains(got, "5h") {
 		t.Errorf("expected no quota segments without rate_limits in stdin, got %q", got)
 	}
+
+	// Empty stdin = no worktree segment even though the toggle is on by default.
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no worktree without git_worktree in stdin, got %q", got)
+	}
 }
 
 func TestBuildStatuslineWithStdinRateLimits(t *testing.T) {
@@ -199,6 +204,27 @@ func TestBuildStatuslineNoWorktreeField(t *testing.T) {
 
 	if strings.Contains(got, "🌿") {
 		t.Errorf("expected no worktree segment when field is empty, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWorktreeWithModelDisabled(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Model = false
+
+	input := `{"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), cfg)
+
+	if !strings.Contains(got, "🌿 feat-api") {
+		t.Errorf("expected worktree even when model disabled, got %q", got)
+	}
+
+	if strings.Contains(got, "🤖") {
+		t.Errorf("expected no model segment, got %q", got)
 	}
 }
 
@@ -624,13 +650,56 @@ func TestNewRootCmdWithFlags(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--cost", "false", "--config", "/nonexistent/config.toml"})
-	cmd.SetIn(strings.NewReader(`{}`))
+	cmd.SetArgs([]string{"--no-model", "--no-worktree", "--cost", "false", "--config", "/nonexistent/config.toml"})
+	cmd.SetIn(strings.NewReader(`{"workspace":{"git_worktree":"feat-api"}}`))
 
-	err := cmd.Execute()
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+	captured := captureStdout(t, func() {
+		executeErr := cmd.Execute()
+		if executeErr != nil {
+			t.Errorf("unexpected error: %v", executeErr)
+		}
+	})
+
+	if strings.Contains(captured, "🌿") {
+		t.Errorf("--no-worktree should suppress worktree segment, got %q", captured)
 	}
+
+	if strings.Contains(captured, "🤖") {
+		t.Errorf("--no-model should suppress model segment, got %q", captured)
+	}
+}
+
+// captureStdout redirects os.Stdout for the duration of body and returns captured output.
+func captureStdout(t *testing.T, body func()) string {
+	t.Helper()
+
+	orig := os.Stdout
+
+	reader, writer, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+
+	os.Stdout = writer
+
+	done := make(chan string, 1)
+
+	go func() {
+		buf, readErr := io.ReadAll(reader)
+		if readErr != nil {
+			t.Errorf("readall: %v", readErr)
+		}
+
+		done <- string(buf)
+	}()
+
+	body()
+
+	writer.Close()
+
+	os.Stdout = orig
+
+	return <-done
 }
 
 func TestNewRootCmdWithConfigFile(t *testing.T) {

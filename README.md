@@ -134,7 +134,7 @@ claudeline --cost false --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`.
+Available flags: `--no-model`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
 
 ## Advanced: `--mac-insecure` mode
 
