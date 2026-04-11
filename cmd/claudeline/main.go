@@ -34,6 +34,9 @@ type stdinData struct {
 	Model struct {
 		DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
 	} `json:"model"`
+	Workspace struct {
+		GitWorktree string `json:"git_worktree"` //nolint:tagliatelle // External API format
+	} `json:"workspace"`
 	Cost struct {
 		TotalCostUSD float64 `json:"total_cost_usd"` //nolint:tagliatelle // External API format
 	} `json:"cost"`
@@ -95,6 +98,7 @@ func newRootCmd() *cobra.Command {
 	flags := rootCmd.PersistentFlags()
 	flags.StringVar(&configPath, "config", defaultConfigPath(), "config file path")
 	flags.Bool("no-model", false, "disable model segment")
+	flags.Bool("no-worktree", false, "disable worktree segment")
 	flags.String("cost", "", "cost segment mode: auto (default), true, false")
 	flags.Bool("no-status", false, "disable status segment")
 	flags.Bool("no-context", false, "disable context segment")
@@ -135,6 +139,10 @@ func newValidateCmd(configPath *string) *cobra.Command {
 func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "no-model") {
 		cfg.Segments.Model = false
+	}
+
+	if flagSet(cmd, "no-worktree") {
+		cfg.Segments.Worktree = false
 	}
 
 	if flagSet(cmd, "cost") {
@@ -199,6 +207,19 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 
 	var segments []string
 
+	segments = appendIdentitySegments(segments, &data, cfg)
+	segments = appendCostAndStatusSegments(segments, &data, cfg)
+	segments = appendContextSegments(segments, &data, cfg)
+
+	if cfg.Segments.Quota || cfg.Segments.Credits {
+		segments = appendUsageSegments(segments, &data, cfg)
+	}
+
+	return fmtutil.JoinPipe(segments)
+}
+
+// appendIdentitySegments adds model and worktree segments (who you are, where you are).
+func appendIdentitySegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if cfg.Segments.Model {
 		model := "Claude"
 		if data.Model.DisplayName != "" {
@@ -208,6 +229,15 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 		segments = append(segments, "🤖 "+model)
 	}
 
+	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
+		segments = append(segments, "🌿 "+data.Workspace.GitWorktree)
+	}
+
+	return segments
+}
+
+// appendCostAndStatusSegments adds cost and platform status segments.
+func appendCostAndStatusSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if shouldShowCost(cfg.Segments.Cost, data.RateLimits.FiveHour != nil || data.RateLimits.SevenDay != nil) {
 		segments = append(segments, fmt.Sprintf("💰 $%.2f", data.Cost.TotalCostUSD))
 	}
@@ -218,6 +248,11 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 		}
 	}
 
+	return segments
+}
+
+// appendContextSegments adds context window and compaction segments.
+func appendContextSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if cfg.Segments.Context && data.ContextWindow.UsedPercentage > 0 {
 		segments = append(segments, fmtutil.ContextSegment(data.ContextWindow.UsedPercentage))
 	}
@@ -228,11 +263,7 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 		}
 	}
 
-	if cfg.Segments.Quota || cfg.Segments.Credits {
-		segments = appendUsageSegments(segments, &data, cfg)
-	}
-
-	return fmtutil.JoinPipe(segments)
+	return segments
 }
 
 // shouldShowCost determines whether to display the cost segment.
