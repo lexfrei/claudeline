@@ -187,9 +187,9 @@ func TestBuildStatuslineWithWorktree(t *testing.T) {
 		t.Errorf("expected worktree segment, got %q", got)
 	}
 
-	// Worktree should appear right after model.
-	if !strings.Contains(got, "🤖 Opus 4.6 | 🌿 feat-api") {
-		t.Errorf("expected worktree right after model, got %q", got)
+	// Worktree should appear after context/compactions, before quotas.
+	if !strings.HasSuffix(got, "🌿 feat-api") {
+		t.Errorf("expected worktree as last segment (no quotas in this input), got %q", got)
 	}
 }
 

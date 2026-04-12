@@ -211,6 +211,10 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	segments = appendCostAndStatusSegments(segments, &data, cfg)
 	segments = appendContextSegments(segments, &data, cfg)
 
+	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
+		segments = append(segments, "🌿 "+data.Workspace.GitWorktree)
+	}
+
 	if cfg.Segments.Quota || cfg.Segments.Credits {
 		segments = appendUsageSegments(segments, &data, cfg)
 	}
@@ -218,7 +222,7 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	return fmtutil.JoinPipe(segments)
 }
 
-// appendIdentitySegments adds model and worktree segments (who you are, where you are).
+// appendIdentitySegments adds model segment.
 func appendIdentitySegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if cfg.Segments.Model {
 		model := "Claude"
@@ -227,10 +231,6 @@ func appendIdentitySegments(segments []string, data *stdinData, cfg *config.Conf
 		}
 
 		segments = append(segments, "🤖 "+model)
-	}
-
-	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
-		segments = append(segments, "🌿 "+data.Workspace.GitWorktree)
 	}
 
 	return segments
