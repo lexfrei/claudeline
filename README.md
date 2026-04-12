@@ -9,11 +9,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ## Example output
 
 ```text
-🤖 Claude | 💰 $1.37 | 🟢 7d: 45% (4d 2h) | 🟢 5h: 12% (4h 23m)
-```
-
-```text
-🤖 Claude | 💰 $0.00 | ⚠️ degraded | 🧠 67% | 🔄 2 | 🟠 7d: 74% (1d 17h) | 🔴 5h: 91% (27m)
+🤖 Opus 4.6 | 🌿 feat-api | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m)
 ```
 
 ## Segments
@@ -21,7 +17,8 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 | Segment | Description |
 | --- | --- |
 | 🤖 Model | Active model name |
-| 💰 Cost | Cumulative session cost in USD |
+| 🌿 Worktree | Git worktree name when cwd is inside a linked worktree (Claude Code v2.1.97+) |
+| 💰 Cost | Cumulative session cost in USD (hidden by default for subscribers, see [Cost mode](#cost-mode)) |
 | ⚠️/🔶/🔴 Status | Anthropic platform status: ⚠️ degraded, 🔶 major outage, 🔴 critical (hidden when all clear) |
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
@@ -35,6 +32,16 @@ Quota indicators compare your usage rate against elapsed time to warn about hitt
 - 🟠 usage is significantly ahead of schedule
 - 🔴 on track to hit the limit before reset
 
+### Cost mode
+
+The cost segment has three modes:
+
+- `auto` (default) — hide for Claude.ai subscribers (who have rate limits), show for API users
+- `true` — always show
+- `false` — never show
+
+Set via `--cost auto|true|false` or `cost = "auto"` in config.
+
 ### Off-peak promotions
 
 During [Anthropic usage promotions](https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion), off-peak hours provide boosted 5-hour limits. claudeline shows ⬆ next to the 5h quota segment when a promotion is active and you are in an off-peak window. The 7-day limit is unaffected — only bonus usage above the normal 5h cap is excluded from weekly counting.
@@ -43,7 +50,8 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 
 ## Requirements
 
-- Claude Code v2.1.80+ (provides `rate_limits` in statusline stdin)
+- Claude Code v2.1.82+ (provides `rate_limits` in statusline stdin)
+- Claude Code v2.1.97+ recommended (adds `workspace.git_worktree` and `refreshInterval`)
 
 ## Installation
 
@@ -77,6 +85,23 @@ Claude Code pipes session data as JSON to stdin. claudeline reads it and outputs
 
 Restart Claude Code after changing settings.
 
+### Keep quota timers ticking
+
+By default Claude Code re-runs the statusline command on each new assistant message, on permission mode changes, and on vim mode toggles. While the session is idle (for example waiting on background subagents), the command is not re-run and quota reset timers freeze on screen.
+
+Set `refreshInterval` in `~/.claude/settings.json` to also re-run the command on a fixed timer. This **adds** to event-driven updates, it does not replace them. Requires Claude Code v2.1.97+.
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "claudeline",
+    "padding": 0,
+    "refreshInterval": 5
+  }
+}
+```
+
 ## Configuration
 
 Optional config file at `~/.claudelinerc.toml`:
@@ -84,7 +109,8 @@ Optional config file at `~/.claudelinerc.toml`:
 ```toml
 [segments]
 model = true
-cost = true
+worktree = true
+cost = "auto"
 status = true
 context = true
 compactions = true
@@ -95,18 +121,20 @@ offpeak = true
 status_ttl = "15s"
 ```
 
-Set any segment to `false` to hide it.
+Set any segment to `false` to hide it (`cost` accepts `"auto"`, `"true"`, `"false"`).
+
+Run `claudeline validate --config ~/.claudelinerc.toml` to check your config for typos and invalid values.
 
 ### CLI flags
 
 Flags override config file settings:
 
 ```bash
-claudeline --no-cost --no-status
+claudeline --cost false --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`.
+Available flags: `--no-model`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
 
 ## Advanced: `--mac-insecure` mode
 

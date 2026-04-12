@@ -16,6 +16,10 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected model segment enabled by default")
 	}
 
+	if !cfg.Segments.Worktree {
+		t.Error("expected worktree segment enabled by default")
+	}
+
 	if cfg.Segments.Cost != CostAuto {
 		t.Errorf("expected cost segment auto by default, got %q", cfg.Segments.Cost)
 	}
@@ -93,6 +97,10 @@ status = false
 		t.Error("expected model segment enabled (not in config)")
 	}
 
+	if !cfg.Segments.Worktree {
+		t.Error("expected worktree segment enabled (not in config)")
+	}
+
 	if cfg.Segments.Cost != CostOff {
 		t.Errorf("expected cost segment off, got %q", cfg.Segments.Cost)
 	}
@@ -116,6 +124,7 @@ func TestLoadFullConfig(t *testing.T) {
 	content := `
 [segments]
 model = false
+worktree = false
 cost = false
 status = false
 context = false
@@ -136,7 +145,7 @@ status_ttl = "30s"
 
 	cfg := Load(configPath)
 
-	if cfg.Segments.Model || cfg.Segments.Cost != CostOff || cfg.Segments.Status ||
+	if cfg.Segments.Model || cfg.Segments.Worktree || cfg.Segments.Cost != CostOff || cfg.Segments.Status ||
 		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota ||
 		cfg.Segments.Credits || cfg.Segments.OffPeak {
 		t.Error("expected all segments disabled")

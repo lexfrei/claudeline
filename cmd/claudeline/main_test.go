@@ -95,6 +95,11 @@ func TestBuildStatuslineMinimal(t *testing.T) {
 	if strings.Contains(got, "⏳") || strings.Contains(got, "7d") || strings.Contains(got, "5h") {
 		t.Errorf("expected no quota segments without rate_limits in stdin, got %q", got)
 	}
+
+	// Empty stdin = no worktree segment even though the toggle is on by default.
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no worktree without git_worktree in stdin, got %q", got)
+	}
 }
 
 func TestBuildStatuslineWithStdinRateLimits(t *testing.T) {
@@ -166,6 +171,77 @@ func TestBuildStatuslineStdinPartialRateLimits(t *testing.T) {
 	// seven_day is absent — should not appear.
 	if strings.Contains(got, "7d") {
 		t.Errorf("expected no 7d without seven_day in stdin, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWithWorktree(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "🌿 feat-api") {
+		t.Errorf("expected worktree segment, got %q", got)
+	}
+
+	// Worktree should appear right after model.
+	if !strings.Contains(got, "🤖 Opus 4.6 | 🌿 feat-api") {
+		t.Errorf("expected worktree right after model, got %q", got)
+	}
+}
+
+func TestBuildStatuslineNoWorktreeField(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no worktree segment when field is empty, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWorktreeWithModelDisabled(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Model = false
+
+	input := `{"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), cfg)
+
+	if !strings.Contains(got, "🌿 feat-api") {
+		t.Errorf("expected worktree even when model disabled, got %q", got)
+	}
+
+	if strings.Contains(got, "🤖") {
+		t.Errorf("expected no model segment, got %q", got)
+	}
+}
+
+func TestBuildStatuslineWorktreeDisabled(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Worktree = false
+
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), cfg)
+
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no worktree when segment disabled, got %q", got)
 	}
 }
 
@@ -536,6 +612,7 @@ func TestBuildStatuslineAllDisabled(t *testing.T) {
 
 	cfg := defaultCfg()
 	cfg.Segments.Model = false
+	cfg.Segments.Worktree = false
 	cfg.Segments.Cost = config.CostOff
 	cfg.Segments.Status = false
 	cfg.Segments.Context = false
@@ -543,7 +620,11 @@ func TestBuildStatuslineAllDisabled(t *testing.T) {
 	cfg.Segments.Quota = false
 	cfg.Segments.Credits = false
 
-	got := buildStatusline([]byte(`{}`), cfg)
+	// Use real data for each segment so the disables must actually fire —
+	// an absent field would hide the segment regardless of the config toggle.
+	input := `{"model":{"display_name":"Opus 4.6"},"workspace":{"git_worktree":"feat-api"},"cost":{"total_cost_usd":1.5},"context_window":{"used_percentage":50}}`
+
+	got := buildStatusline([]byte(input), cfg)
 
 	if got != "" {
 		t.Errorf("expected empty output, got %q", got)
@@ -569,13 +650,56 @@ func TestNewRootCmdWithFlags(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--cost", "false", "--config", "/nonexistent/config.toml"})
-	cmd.SetIn(strings.NewReader(`{}`))
+	cmd.SetArgs([]string{"--no-model", "--no-worktree", "--cost", "false", "--config", "/nonexistent/config.toml"})
+	cmd.SetIn(strings.NewReader(`{"workspace":{"git_worktree":"feat-api"}}`))
 
-	err := cmd.Execute()
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+	captured := captureStdout(t, func() {
+		executeErr := cmd.Execute()
+		if executeErr != nil {
+			t.Errorf("unexpected error: %v", executeErr)
+		}
+	})
+
+	if strings.Contains(captured, "🌿") {
+		t.Errorf("--no-worktree should suppress worktree segment, got %q", captured)
 	}
+
+	if strings.Contains(captured, "🤖") {
+		t.Errorf("--no-model should suppress model segment, got %q", captured)
+	}
+}
+
+// captureStdout redirects os.Stdout for the duration of body and returns captured output.
+func captureStdout(t *testing.T, body func()) string {
+	t.Helper()
+
+	orig := os.Stdout
+
+	reader, writer, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+
+	os.Stdout = writer
+
+	done := make(chan string, 1)
+
+	go func() {
+		buf, readErr := io.ReadAll(reader)
+		if readErr != nil {
+			t.Errorf("readall: %v", readErr)
+		}
+
+		done <- string(buf)
+	}()
+
+	body()
+
+	writer.Close()
+
+	os.Stdout = orig
+
+	return <-done
 }
 
 func TestNewRootCmdWithConfigFile(t *testing.T) {
@@ -619,9 +743,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	cmd.SetArgs([]string{"--no-model", "--no-worktree", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-worktree", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -631,6 +755,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 
 	if cfg.Segments.Model {
 		t.Error("expected model disabled by flag")
+	}
+
+	if cfg.Segments.Worktree {
+		t.Error("expected worktree disabled by flag")
 	}
 
 	if cfg.Segments.Quota {

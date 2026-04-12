@@ -39,6 +39,7 @@ func NormalizeCostMode(raw string) string {
 // Segments controls which statusline segments are displayed.
 type Segments struct {
 	Model         bool   `mapstructure:"model"`
+	Worktree      bool   `mapstructure:"worktree"`
 	Cost          string `mapstructure:"cost"`
 	Status        bool   `mapstructure:"status"`
 	Context       bool   `mapstructure:"context"`
@@ -67,6 +68,7 @@ func Defaults() Config {
 	return Config{
 		Segments: Segments{
 			Model:       true,
+			Worktree:    true,
 			Cost:        CostAuto,
 			Status:      true,
 			Context:     true,
@@ -122,6 +124,7 @@ func Load(configPath string) Config {
 // knownKeys is the set of all valid configuration keys.
 var knownKeys = map[string]bool{
 	"segments.model":           true,
+	"segments.worktree":        true,
 	"segments.cost":            true,
 	"segments.status":          true,
 	"segments.context":         true,
@@ -187,6 +190,7 @@ func validateSegments(seg *Segments, v *viper.Viper) []string {
 		raw any
 	}{
 		{"segments.model", v.Get("segments.model")},
+		{"segments.worktree", v.Get("segments.worktree")},
 		{"segments.status", v.Get("segments.status")},
 		{"segments.context", v.Get("segments.context")},
 		{"segments.compactions", v.Get("segments.compactions")},
@@ -231,6 +235,7 @@ func validateCache(cache *Cache) []string {
 
 func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.model", true)
+	viperInstance.SetDefault("segments.worktree", true)
 	viperInstance.SetDefault("segments.cost", CostAuto)
 	viperInstance.SetDefault("segments.status", true)
 	viperInstance.SetDefault("segments.context", true)
