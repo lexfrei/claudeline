@@ -211,12 +211,12 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 	segments = appendCostAndStatusSegments(segments, &data, cfg)
 	segments = appendContextSegments(segments, &data, cfg)
 
-	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
-		segments = append(segments, "🌿 "+data.Workspace.GitWorktree)
-	}
-
 	if cfg.Segments.Quota || cfg.Segments.Credits {
 		segments = appendUsageSegments(segments, &data, cfg)
+	}
+
+	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
+		segments = append(segments, "🌿 "+data.Workspace.GitWorktree)
 	}
 
 	return fmtutil.JoinPipe(segments)

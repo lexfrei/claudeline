@@ -9,7 +9,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ## Example output
 
 ```text
-🤖 Opus 4.6 | 🧠 67% | 🔄 2 | 🌿 feat-api | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m)
+🤖 Opus 4.6 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🌿 feat-api
 ```
 
 ## Segments

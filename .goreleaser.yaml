@@ -21,18 +21,17 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
-homebrew_casks:
-  - name: claudeline
-    binaries:
-      - claudeline
-    repository:
+brews:
+  - repository:
       owner: lexfrei
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Casks
+    directory: Formula
     homepage: "https://github.com/lexfrei/claudeline"
     description: "Real-time statusline for Claude Code"
-    commit_msg_template: "Cask update for {{ .ProjectName }} {{ .Tag }}"
+    license: "BSD-3-Clause"
+    install: |
+      bin.install "claudeline"
 
 checksum:
   name_template: "checksums.txt"
