@@ -21,17 +21,18 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
-brews:
-  - repository:
+homebrew_casks:
+  - name: claudeline
+    binaries:
+      - claudeline
+    repository:
       owner: lexfrei
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/lexfrei/claudeline"
-    description: "Claude Code statusline with real usage limits from Anthropic API"
-    license: "BSD-3-Clause"
-    install: |
-      bin.install "claudeline"
+    description: "Real-time statusline for Claude Code"
+    commit_msg_template: "Cask update for {{ .ProjectName }} {{ .Tag }}"
 
 checksum:
   name_template: "checksums.txt"
