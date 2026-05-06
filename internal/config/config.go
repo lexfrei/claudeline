@@ -39,6 +39,9 @@ func NormalizeCostMode(raw string) string {
 // Segments controls which statusline segments are displayed.
 type Segments struct {
 	Model         bool   `mapstructure:"model"`
+	Effort        bool   `mapstructure:"effort"`
+	Thinking      bool   `mapstructure:"thinking"`
+	FastMode      bool   `mapstructure:"fast_mode"`
 	Worktree      bool   `mapstructure:"worktree"`
 	Cost          string `mapstructure:"cost"`
 	Status        bool   `mapstructure:"status"`
@@ -68,6 +71,9 @@ func Defaults() Config {
 	return Config{
 		Segments: Segments{
 			Model:       true,
+			Effort:      true,
+			Thinking:    true,
+			FastMode:    true,
 			Worktree:    true,
 			Cost:        CostAuto,
 			Status:      true,
@@ -124,6 +130,9 @@ func Load(configPath string) Config {
 // knownKeys is the set of all valid configuration keys.
 var knownKeys = map[string]bool{
 	"segments.model":           true,
+	"segments.effort":          true,
+	"segments.thinking":        true,
+	"segments.fast_mode":       true,
 	"segments.worktree":        true,
 	"segments.cost":            true,
 	"segments.status":          true,
@@ -190,6 +199,9 @@ func validateSegments(seg *Segments, v *viper.Viper) []string {
 		raw any
 	}{
 		{"segments.model", v.Get("segments.model")},
+		{"segments.effort", v.Get("segments.effort")},
+		{"segments.thinking", v.Get("segments.thinking")},
+		{"segments.fast_mode", v.Get("segments.fast_mode")},
 		{"segments.worktree", v.Get("segments.worktree")},
 		{"segments.status", v.Get("segments.status")},
 		{"segments.context", v.Get("segments.context")},
@@ -235,6 +247,9 @@ func validateCache(cache *Cache) []string {
 
 func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.model", true)
+	viperInstance.SetDefault("segments.effort", true)
+	viperInstance.SetDefault("segments.thinking", true)
+	viperInstance.SetDefault("segments.fast_mode", true)
 	viperInstance.SetDefault("segments.worktree", true)
 	viperInstance.SetDefault("segments.cost", CostAuto)
 	viperInstance.SetDefault("segments.status", true)

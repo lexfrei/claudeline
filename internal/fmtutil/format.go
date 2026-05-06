@@ -29,10 +29,13 @@ const (
 // ErrCannotParseTimestamp is returned when a timestamp string cannot be parsed.
 var ErrCannotParseTimestamp = errors.New("cannot parse timestamp")
 
+// DurationNow is the rendering used for non-positive durations.
+const DurationNow = "now"
+
 // Duration returns a human-readable duration from minutes.
 func Duration(minutes int) string {
 	if minutes <= 0 {
-		return "now"
+		return DurationNow
 	}
 
 	days := minutes / minutesPerDay
