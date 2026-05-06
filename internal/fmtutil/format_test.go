@@ -13,8 +13,8 @@ func TestDuration(t *testing.T) {
 		minutes int
 		want    string
 	}{
-		{0, "now"},
-		{-5, "now"},
+		{0, DurationNow},
+		{-5, DurationNow},
 		{7, "7m"},
 		{60, "1h 0m"},
 		{125, "2h 5m"},

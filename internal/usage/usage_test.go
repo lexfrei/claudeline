@@ -16,6 +16,15 @@ const (
 	testToken     = "test-token"
 	authErrorType = "authentication_error"
 	rateLimitType = "rate_limit_error"
+
+	headerRetryAfter            = "Retry-After"
+	headerContentType           = "Content-Type"
+	headerContentSecurityPolicy = "Content-Security-Policy"
+	headerXRobotsTag            = "X-Robots-Tag"
+
+	mimeJSON   = "application/json"
+	cspNone    = "default-src 'none'; frame-ancestors 'none'"
+	robotsNone = "none"
 )
 
 var errTest = errors.New("test error")
@@ -213,12 +222,12 @@ func TestParseRetryAfterSeconds(t *testing.T) {
 	}{
 		{
 			name:     "valid seconds",
-			header:   http.Header{"Retry-After": []string{"6"}},
+			header:   http.Header{headerRetryAfter: []string{"6"}},
 			expected: 6,
 		},
 		{
 			name:     "zero seconds",
-			header:   http.Header{"Retry-After": []string{"0"}},
+			header:   http.Header{headerRetryAfter: []string{"0"}},
 			expected: 0,
 		},
 		{
@@ -228,12 +237,12 @@ func TestParseRetryAfterSeconds(t *testing.T) {
 		},
 		{
 			name:     "negative value clamped to zero",
-			header:   http.Header{"Retry-After": []string{"-5"}},
+			header:   http.Header{headerRetryAfter: []string{"-5"}},
 			expected: 0,
 		},
 		{
 			name:     "non-numeric value uses default",
-			header:   http.Header{"Retry-After": []string{"Wed, 11 Mar 2026 18:44:10 GMT"}},
+			header:   http.Header{headerRetryAfter: []string{"Wed, 11 Mar 2026 18:44:10 GMT"}},
 			expected: defaultRetryAfterSeconds,
 		},
 	}
@@ -364,7 +373,7 @@ func TestFetchRateLimitedRespectsRetryAfter(t *testing.T) {
 		return &httpclient.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       []byte(`{"error":{"type":"rate_limit_error"}}`),
-			Header:     http.Header{"Retry-After": []string{"6"}},
+			Header:     http.Header{headerRetryAfter: []string{"6"}},
 		}, nil
 	}
 
@@ -427,7 +436,7 @@ func TestFetchRateLimitedNotCachedInMainCache(t *testing.T) {
 		return &httpclient.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       []byte(`{"error":{"type":"rate_limit_error"}}`),
-			Header:     http.Header{"Retry-After": []string{"6"}},
+			Header:     http.Header{headerRetryAfter: []string{"6"}},
 		}, nil
 	}
 
@@ -626,7 +635,7 @@ func TestFetchRateLimitedWithNonJSONBody(t *testing.T) {
 		return &httpclient.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       []byte(`Rate limited. Please try again later.`),
-			Header:     http.Header{"Retry-After": []string{"10"}},
+			Header:     http.Header{headerRetryAfter: []string{"10"}},
 		}, nil
 	}
 
@@ -704,13 +713,13 @@ func TestFetchWithReal429Response(t *testing.T) {
 			StatusCode: http.StatusTooManyRequests,
 			Body:       []byte(real429Body),
 			Header: http.Header{
-				"Content-Type":            []string{"application/json"},
-				"Retry-After":             []string{"6"},
-				"Cache-Control":           []string{"private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0"},
-				"Referrer-Policy":         []string{"same-origin"},
-				"X-Frame-Options":         []string{"SAMEORIGIN"},
-				"Content-Security-Policy": []string{"default-src 'none'; frame-ancestors 'none'"},
-				"X-Robots-Tag":            []string{"none"},
+				headerContentType:           []string{mimeJSON},
+				headerRetryAfter:            []string{"6"},
+				"Cache-Control":             []string{"private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0"},
+				"Referrer-Policy":           []string{"same-origin"},
+				"X-Frame-Options":           []string{"SAMEORIGIN"},
+				headerContentSecurityPolicy: []string{cspNone},
+				headerXRobotsTag:            []string{robotsNone},
 			},
 		}, nil
 	}
@@ -751,11 +760,11 @@ func TestFetchWithReal401Response(t *testing.T) {
 			StatusCode: http.StatusUnauthorized,
 			Body:       []byte(real401Body),
 			Header: http.Header{
-				"Content-Type":            []string{"application/json"},
-				"X-Should-Retry":          []string{"false"},
-				"Request-Id":              []string{"req_011CYwnYqWfPFkeKDkDmyKqs"},
-				"Content-Security-Policy": []string{"default-src 'none'; frame-ancestors 'none'"},
-				"X-Robots-Tag":            []string{"none"},
+				headerContentType:           []string{mimeJSON},
+				"X-Should-Retry":            []string{"false"},
+				"Request-Id":                []string{"req_011CYwnYqWfPFkeKDkDmyKqs"},
+				headerContentSecurityPolicy: []string{cspNone},
+				headerXRobotsTag:            []string{robotsNone},
 			},
 		}, nil
 	}
@@ -799,11 +808,11 @@ func TestFetchWithReal200Response(t *testing.T) {
 			StatusCode: http.StatusOK,
 			Body:       []byte(real200Body),
 			Header: http.Header{
-				"Content-Type":              []string{"application/json"},
+				headerContentType:           []string{mimeJSON},
 				"Request-Id":                []string{"req_011CYwnbPgEDyqe7p3VQohKX"},
 				"Anthropic-Organization-Id": []string{"71f33990-619b-49dd-9175-8df9803e8b59"},
-				"Content-Security-Policy":   []string{"default-src 'none'; frame-ancestors 'none'"},
-				"X-Robots-Tag":              []string{"none"},
+				headerContentSecurityPolicy: []string{cspNone},
+				headerXRobotsTag:            []string{robotsNone},
 			},
 		}, nil
 	}
