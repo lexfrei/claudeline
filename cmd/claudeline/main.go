@@ -25,6 +25,13 @@ var (
 	commit  = "none"
 )
 
+const (
+	labelSevenDayOpus      = "7d-opus"
+	labelSevenDaySonnet    = "7d-sonnet"
+	labelSevenDayCowork    = "7d-cowork"
+	labelSevenDayOAuthApps = "7d-oauth"
+)
+
 type stdinRateWindow struct {
 	UsedPercentage float64 `json:"used_percentage"` //nolint:tagliatelle // External API format
 	ResetsAt       float64 `json:"resets_at"`       //nolint:tagliatelle // External API format
@@ -34,6 +41,13 @@ type stdinData struct {
 	Model struct {
 		DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
 	} `json:"model"`
+	Effort struct {
+		Level string `json:"level"`
+	} `json:"effort"`
+	Thinking struct {
+		Enabled bool `json:"enabled"`
+	} `json:"thinking"`
+	FastMode  bool `json:"fast_mode"` //nolint:tagliatelle // External API format
 	Workspace struct {
 		GitWorktree string `json:"git_worktree"` //nolint:tagliatelle // External API format
 	} `json:"workspace"`
@@ -98,6 +112,9 @@ func newRootCmd() *cobra.Command {
 	flags := rootCmd.PersistentFlags()
 	flags.StringVar(&configPath, "config", defaultConfigPath(), "config file path")
 	flags.Bool("no-model", false, "disable model segment")
+	flags.Bool("no-effort", false, "disable effort indicator on model segment")
+	flags.Bool("no-thinking", false, "disable thinking indicator on model segment")
+	flags.Bool("no-fast-mode", false, "disable fast-mode indicator on model segment")
 	flags.Bool("no-worktree", false, "disable worktree segment")
 	flags.String("cost", "", "cost segment mode: auto (default), true, false")
 	flags.Bool("no-status", false, "disable status segment")
@@ -137,14 +154,34 @@ func newValidateCmd(configPath *string) *cobra.Command {
 }
 
 func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
+	applyIdentityFlags(cmd, cfg)
+	applyDisplayFlags(cmd, cfg)
+	applyUsageFlags(cmd, cfg)
+}
+
+func applyIdentityFlags(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "no-model") {
 		cfg.Segments.Model = false
+	}
+
+	if flagSet(cmd, "no-effort") {
+		cfg.Segments.Effort = false
+	}
+
+	if flagSet(cmd, "no-thinking") {
+		cfg.Segments.Thinking = false
+	}
+
+	if flagSet(cmd, "no-fast-mode") {
+		cfg.Segments.FastMode = false
 	}
 
 	if flagSet(cmd, "no-worktree") {
 		cfg.Segments.Worktree = false
 	}
+}
 
+func applyDisplayFlags(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "cost") {
 		if val, _ := cmd.PersistentFlags().GetString("cost"); val != "" {
 			cfg.Segments.Cost = val
@@ -162,7 +199,9 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "no-compactions") {
 		cfg.Segments.Compactions = false
 	}
+}
 
+func applyUsageFlags(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "no-quota") {
 		cfg.Segments.Quota = false
 	}
@@ -230,10 +269,51 @@ func appendIdentitySegments(segments []string, data *stdinData, cfg *config.Conf
 			model = data.Model.DisplayName
 		}
 
+		if suffix := formatModelSuffix(data, cfg); suffix != "" {
+			model += " " + suffix
+		}
+
 		segments = append(segments, "🤖 "+model)
 	}
 
 	return segments
+}
+
+// formatModelSuffix builds the indicator suffix appended to the model name.
+// Combines effort level, thinking, and fast-mode flags into a single string.
+func formatModelSuffix(data *stdinData, cfg *config.Config) string {
+	var parts []string
+
+	if cfg.Segments.Effort {
+		if e := effortIndicator(data.Effort.Level); e != "" {
+			parts = append(parts, e)
+		}
+	}
+
+	if cfg.Segments.Thinking && data.Thinking.Enabled {
+		parts = append(parts, "💭")
+	}
+
+	if cfg.Segments.FastMode && data.FastMode {
+		parts = append(parts, "⚡")
+	}
+
+	return strings.Join(parts, "")
+}
+
+func effortIndicator(level string) string {
+	switch level {
+	case "low":
+		return "⬇️"
+	case "high":
+		return "⬆️"
+	case "xhigh":
+		return "⏫"
+	case "max":
+		return "🚀"
+	default:
+		return ""
+	}
 }
 
 // appendCostAndStatusSegments adds cost and platform status segments.
@@ -317,10 +397,10 @@ func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, pr
 
 	if perModel {
 		windows = append(windows,
-			labeledWindow{data.SevenDayOpus, "7d-opus"},
-			labeledWindow{data.SevenDaySonnet, "7d-sonnet"},
-			labeledWindow{data.SevenDayCowork, "7d-cowork"},
-			labeledWindow{data.SevenDayOAuthApps, "7d-oauth"},
+			labeledWindow{data.SevenDayOpus, labelSevenDayOpus},
+			labeledWindow{data.SevenDaySonnet, labelSevenDaySonnet},
+			labeledWindow{data.SevenDayCowork, labelSevenDayCowork},
+			labeledWindow{data.SevenDayOAuthApps, labelSevenDayOAuthApps},
 		)
 	}
 
@@ -407,10 +487,10 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 
 	if perModel {
 		windows = append(windows,
-			labeledWindow{lastGood.SevenDayOpus, "7d-opus"},
-			labeledWindow{lastGood.SevenDaySonnet, "7d-sonnet"},
-			labeledWindow{lastGood.SevenDayCowork, "7d-cowork"},
-			labeledWindow{lastGood.SevenDayOAuthApps, "7d-oauth"},
+			labeledWindow{lastGood.SevenDayOpus, labelSevenDayOpus},
+			labeledWindow{lastGood.SevenDaySonnet, labelSevenDaySonnet},
+			labeledWindow{lastGood.SevenDayCowork, labelSevenDayCowork},
+			labeledWindow{lastGood.SevenDayOAuthApps, labelSevenDayOAuthApps},
 		)
 	}
 

@@ -18,7 +18,12 @@ import (
 	"github.com/lexfrei/claudeline/internal/usage"
 )
 
-const testToken = "test-token"
+const (
+	testToken       = "test-token"
+	testModelOpus47 = "🤖 Opus 4.7"
+	flagNoModel     = "--no-model"
+	flagNoWorktree  = "--no-worktree"
+)
 
 func defaultCfg() *config.Config {
 	cfg := config.Defaults()
@@ -262,6 +267,121 @@ func TestBuildStatuslineWithModel(t *testing.T) {
 
 	if !strings.Contains(got, "💰 $42.50") {
 		t.Errorf("expected $42.50, got %q", got)
+	}
+}
+
+func TestBuildStatuslineEffortLevels(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	cases := []struct {
+		level    string
+		expected string
+	}{
+		{"low", "🤖 Opus 4.7 ⬇️"},
+		{"medium", testModelOpus47},
+		{"high", "🤖 Opus 4.7 ⬆️"},
+		{"xhigh", "🤖 Opus 4.7 ⏫"},
+		{"max", "🤖 Opus 4.7 🚀"},
+		{"", testModelOpus47},
+		{"unknown", testModelOpus47},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.level, func(t *testing.T) {
+			input := fmt.Sprintf(`{"model":{"display_name":"Opus 4.7"},"effort":{"level":%q}}`, tcase.level)
+
+			got := buildStatusline([]byte(input), defaultCfg())
+			if !strings.Contains(got, tcase.expected) {
+				t.Errorf("level=%q: expected %q, got %q", tcase.level, tcase.expected, got)
+			}
+
+			// Medium and unknown levels must not emit any effort indicator.
+			if tcase.level == "medium" || tcase.level == "" || tcase.level == "unknown" {
+				for _, ind := range []string{"⬇️", "⬆️", "⏫", "🚀"} {
+					if strings.Contains(got, ind) {
+						t.Errorf("level=%q: unexpected indicator %q, got %q", tcase.level, ind, got)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestBuildStatuslineThinkingIndicator(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.7"},"thinking":{"enabled":true}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "🤖 Opus 4.7 💭") {
+		t.Errorf("expected thinking indicator, got %q", got)
+	}
+}
+
+func TestBuildStatuslineFastModeIndicator(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.6"},"fast_mode":true}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "🤖 Opus 4.6 ⚡") {
+		t.Errorf("expected fast-mode indicator, got %q", got)
+	}
+}
+
+func TestBuildStatuslineCombinedIndicators(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	input := `{"model":{"display_name":"Opus 4.7"},"effort":{"level":"high"},"thinking":{"enabled":true},"fast_mode":true}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "🤖 Opus 4.7 ⬆️💭⚡") {
+		t.Errorf("expected combined indicators, got %q", got)
+	}
+}
+
+func TestBuildStatuslineIndicatorsDisabled(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Effort = false
+	cfg.Segments.Thinking = false
+	cfg.Segments.FastMode = false
+
+	input := `{"model":{"display_name":"Opus 4.7"},"effort":{"level":"max"},"thinking":{"enabled":true},"fast_mode":true}`
+
+	got := buildStatusline([]byte(input), cfg)
+	if strings.Contains(got, "🚀") || strings.Contains(got, "💭") || strings.Contains(got, "⚡") {
+		t.Errorf("expected no indicators when disabled, got %q", got)
+	}
+
+	if !strings.Contains(got, testModelOpus47) {
+		t.Errorf("expected bare model name, got %q", got)
 	}
 }
 
@@ -650,7 +770,7 @@ func TestNewRootCmdWithFlags(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-worktree", "--cost", "false", "--config", "/nonexistent/config.toml"})
+	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--cost", "false", "--config", "/nonexistent/config.toml"})
 	cmd.SetIn(strings.NewReader(`{"workspace":{"git_worktree":"feat-api"}}`))
 
 	captured := captureStdout(t, func() {
@@ -743,9 +863,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--no-model", "--no-worktree", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{"--no-model", "--no-worktree", "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
