@@ -1,7 +1,7 @@
 # claudeline
 
 [![CI](https://github.com/lexfrei/claudeline/actions/workflows/ci.yaml/badge.svg)](https://github.com/lexfrei/claudeline/actions/workflows/ci.yaml)
-[![Go](https://img.shields.io/github/go-mod-go-version/lexfrei/claudeline)](https://go.dev/)
+[![Go](https://img.shields.io/github/go-mod/go-version/lexfrei/claudeline)](https://go.dev/)
 [![License](https://img.shields.io/github/license/lexfrei/claudeline)](LICENSE)
 
 Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) showing live quota usage directly from stdin data.
