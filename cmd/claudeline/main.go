@@ -37,6 +37,18 @@ type stdinRateWindow struct {
 	ResetsAt       float64 `json:"resets_at"`       //nolint:tagliatelle // External API format
 }
 
+type stdinRepoInfo struct {
+	Host  string `json:"host"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+type stdinPRInfo struct {
+	Number      int    `json:"number"`
+	URL         string `json:"url"`
+	ReviewState string `json:"review_state"` //nolint:tagliatelle // External API format
+}
+
 type stdinData struct {
 	Model struct {
 		DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
@@ -49,8 +61,10 @@ type stdinData struct {
 	} `json:"thinking"`
 	FastMode  bool `json:"fast_mode"` //nolint:tagliatelle // External API format
 	Workspace struct {
-		GitWorktree string `json:"git_worktree"` //nolint:tagliatelle // External API format
+		GitWorktree string         `json:"git_worktree"` //nolint:tagliatelle // External API format
+		Repo        *stdinRepoInfo `json:"repo"`
 	} `json:"workspace"`
+	PR   *stdinPRInfo `json:"pr"`
 	Cost struct {
 		TotalCostUSD float64 `json:"total_cost_usd"` //nolint:tagliatelle // External API format
 	} `json:"cost"`
@@ -115,6 +129,7 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("no-effort", false, "disable effort indicator on model segment")
 	flags.Bool("no-thinking", false, "disable thinking indicator on model segment")
 	flags.Bool("no-fast-mode", false, "disable fast-mode indicator on model segment")
+	flags.Bool("no-repo", false, "disable combined repo/PR segment (falls back to bare worktree)")
 	flags.Bool("no-worktree", false, "disable worktree segment")
 	flags.String("cost", "", "cost segment mode: auto (default), true, false")
 	flags.Bool("no-status", false, "disable status segment")
@@ -174,6 +189,10 @@ func applyIdentityFlags(cmd *cobra.Command, cfg *config.Config) {
 
 	if flagSet(cmd, "no-fast-mode") {
 		cfg.Segments.FastMode = false
+	}
+
+	if flagSet(cmd, "no-repo") {
+		cfg.Segments.Repo = false
 	}
 
 	if flagSet(cmd, "no-worktree") {
@@ -254,11 +273,86 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 		segments = appendUsageSegments(segments, &data, cfg)
 	}
 
-	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
-		segments = append(segments, "🌿 "+data.Workspace.GitWorktree)
-	}
+	segments = appendRepoSegment(segments, &data, cfg)
 
 	return fmtutil.JoinPipe(segments)
+}
+
+// appendRepoSegment renders the combined repo/PR/worktree segment, or falls
+// back to the bare worktree segment when no repo info is available.
+func appendRepoSegment(segments []string, data *stdinData, cfg *config.Config) []string {
+	if cfg.Segments.Repo && data.Workspace.Repo != nil {
+		return append(segments, formatRepoSegment(data))
+	}
+
+	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
+		return append(segments, "🌿 "+data.Workspace.GitWorktree)
+	}
+
+	return segments
+}
+
+// formatRepoSegment builds the combined repo segment:
+//
+//	🐙 owner/repo [#N <state>] [@ worktree]
+//
+// Host icon varies by `workspace.repo.host`; unknown hosts surface as
+// "📦 host/owner/repo" so the source is still legible.
+func formatRepoSegment(data *stdinData) string {
+	repo := data.Workspace.Repo
+	icon, prefix := repoHostIcon(repo.Host)
+
+	parts := []string{icon + " " + prefix + repo.Owner + "/" + repo.Name}
+
+	if data.PR != nil && data.PR.Number > 0 {
+		prPart := fmt.Sprintf("#%d", data.PR.Number)
+		if state := prReviewIcon(data.PR.ReviewState); state != "" {
+			prPart += " " + state
+		}
+
+		parts = append(parts, prPart)
+	}
+
+	if data.Workspace.GitWorktree != "" {
+		parts = append(parts, "@ "+data.Workspace.GitWorktree)
+	}
+
+	return strings.Join(parts, " ")
+}
+
+// repoHostIcon returns the leading emoji and an optional host prefix.
+// Known hosts get a dedicated icon and no prefix; unknown hosts get a
+// generic icon and "<host>/" prefix so the origin stays visible.
+func repoHostIcon(host string) (icon, prefix string) {
+	switch host {
+	case "github.com":
+		return "🐙", ""
+	case "gitlab.com":
+		return "🦊", ""
+	case "bitbucket.org":
+		return "🪣", ""
+	case "":
+		return "📦", ""
+	default:
+		return "📦", host + "/"
+	}
+}
+
+func prReviewIcon(state string) string {
+	switch state {
+	case "draft":
+		return "📝"
+	case "approved":
+		return "✅"
+	case "changes_requested":
+		return "🔴"
+	case "commented":
+		return "💬"
+	case "pending":
+		return "👀"
+	default:
+		return ""
+	}
 }
 
 // appendIdentitySegments adds model segment.

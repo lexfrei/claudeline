@@ -9,21 +9,38 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ## Example output
 
 ```text
-🤖 Opus 4.6 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🌿 feat-api
+🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline #19 📝 @ feat-api
 ```
 
 ## Segments
 
 | Segment | Description |
 | --- | --- |
-| 🤖 Model | Active model name |
-| 🌿 Worktree | Git worktree name when cwd is inside a linked worktree (Claude Code v2.1.97+) |
+| 🤖 Model | Active model name, with effort / thinking / fast-mode indicators (Claude Code v2.1.119+) |
+| 🐙 Repo | Repository host icon, `owner/name`, optional `#PR <state>`, optional `@ worktree` (Claude Code v2.1.145+) |
+| 🌿 Worktree | Bare worktree fallback when no repository info is available |
 | 💰 Cost | Cumulative session cost in USD (hidden by default for subscribers, see [Cost mode](#cost-mode)) |
 | ⚠️/🔶/🔴 Status | Anthropic platform status: ⚠️ degraded, 🔶 major outage, 🔴 critical (hidden when all clear) |
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
 | 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
 | 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (⬆ during off-peak promotions) |
+
+### Model indicators
+
+  - effort `low` → `⬇️`, `medium` → no indicator, `high` → `⬆️`, `xhigh` → `⏫`, `max` → `🚀`
+  - thinking enabled → `💭`
+  - fast mode → `⚡`
+
+### Repo segment
+
+Renders when Claude Code reports `workspace.repo` (a git remote pointing at a known host):
+
+  - `🐙` github.com, `🦊` gitlab.com, `🪣` bitbucket.org, `📦` other hosts (with `host/` prefix)
+  - `#N` followed by review state: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
+  - `@ branch` when inside a linked worktree
+
+When no `workspace.repo` is present (non-git or detached state), the segment falls back to the bare worktree form (`🌿 branch`).
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
 
@@ -52,6 +69,8 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 
 - Claude Code v2.1.82+ (provides `rate_limits` in statusline stdin)
 - Claude Code v2.1.97+ recommended (adds `workspace.git_worktree` and `refreshInterval`)
+- Claude Code v2.1.119+ enables effort, thinking, and fast-mode indicators
+- Claude Code v2.1.145+ enables the combined repo / PR segment
 
 ## Installation
 
@@ -109,6 +128,10 @@ Optional config file at `~/.claudelinerc.toml`:
 ```toml
 [segments]
 model = true
+effort = true
+thinking = true
+fast_mode = true
+repo = true
 worktree = true
 cost = "auto"
 status = true
@@ -134,7 +157,7 @@ claudeline --cost false --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
+Available flags: `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
 
 ## Advanced: `--mac-insecure` mode
 

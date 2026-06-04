@@ -42,6 +42,7 @@ type Segments struct {
 	Effort        bool   `mapstructure:"effort"`
 	Thinking      bool   `mapstructure:"thinking"`
 	FastMode      bool   `mapstructure:"fast_mode"`
+	Repo          bool   `mapstructure:"repo"`
 	Worktree      bool   `mapstructure:"worktree"`
 	Cost          string `mapstructure:"cost"`
 	Status        bool   `mapstructure:"status"`
@@ -74,6 +75,7 @@ func Defaults() Config {
 			Effort:      true,
 			Thinking:    true,
 			FastMode:    true,
+			Repo:        true,
 			Worktree:    true,
 			Cost:        CostAuto,
 			Status:      true,
@@ -133,6 +135,7 @@ var knownKeys = map[string]bool{
 	"segments.effort":          true,
 	"segments.thinking":        true,
 	"segments.fast_mode":       true,
+	"segments.repo":            true,
 	"segments.worktree":        true,
 	"segments.cost":            true,
 	"segments.status":          true,
@@ -202,6 +205,7 @@ func validateSegments(seg *Segments, v *viper.Viper) []string {
 		{"segments.effort", v.Get("segments.effort")},
 		{"segments.thinking", v.Get("segments.thinking")},
 		{"segments.fast_mode", v.Get("segments.fast_mode")},
+		{"segments.repo", v.Get("segments.repo")},
 		{"segments.worktree", v.Get("segments.worktree")},
 		{"segments.status", v.Get("segments.status")},
 		{"segments.context", v.Get("segments.context")},
@@ -250,6 +254,7 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.effort", true)
 	viperInstance.SetDefault("segments.thinking", true)
 	viperInstance.SetDefault("segments.fast_mode", true)
+	viperInstance.SetDefault("segments.repo", true)
 	viperInstance.SetDefault("segments.worktree", true)
 	viperInstance.SetDefault("segments.cost", CostAuto)
 	viperInstance.SetDefault("segments.status", true)
