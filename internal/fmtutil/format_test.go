@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// wantPipeJoinABC is the canonical pipe-joined fixture shared by tests of
+// both JoinPipe and JoinPipeWrap, which must agree on the single-line form.
+const wantPipeJoinABC = "a | b | c"
+
 func TestDuration(t *testing.T) {
 	t.Parallel()
 
@@ -140,7 +144,7 @@ func TestJoinPipe(t *testing.T) {
 	}{
 		{"nil", nil, ""},
 		{"single", []string{"a"}, "a"},
-		{"multiple", []string{"a", "b", "c"}, "a | b | c"},
+		{"multiple", []string{"a", "b", "c"}, wantPipeJoinABC},
 	}
 
 	for _, tt := range tests {
