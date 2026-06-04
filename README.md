@@ -32,6 +32,14 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
   - thinking enabled → `💭`
   - fast mode → `⚡`
 
+### Auto-wrap on narrow terminals
+
+When Claude Code exports `$COLUMNS` (v2.1.153+) and the joined statusline exceeds the available width, segments overflow onto additional lines instead of running past the host's line budget. Segments are never split mid-content — a single oversized segment lands on its own line.
+
+A small safety margin (2 cells) is subtracted from `$COLUMNS` as a buffer: the terminal may have resized between Claude Code reading `$COLUMNS` and the script running, and empirically rows exactly equal to `$COLUMNS` were observed to drop their rightmost character. Tuning this further is out of scope until someone reports a concrete miss.
+
+When `$COLUMNS` is unset (older Claude Code, non-terminal hosts), output stays on a single line — current behavior is preserved.
+
 ### Repo segment
 
 Renders when Claude Code reports `workspace.repo` (a git remote pointing at a known host):
@@ -72,6 +80,7 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 - Claude Code v2.1.97+ recommended (adds `workspace.git_worktree` and `refreshInterval`)
 - Claude Code v2.1.119+ enables effort, thinking, and fast-mode indicators
 - Claude Code v2.1.145+ enables the combined repo / PR segment
+- Claude Code v2.1.153+ enables terminal-width-aware line wrapping (via the `COLUMNS` env var)
 - Current branch in `🌿 branch` is read directly from `cwd/.git/HEAD`, no `git` binary required
 
 ## Installation
