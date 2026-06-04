@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -278,8 +279,33 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 
 	segments = appendRepoSegment(segments, &data, cfg)
 
-	return fmtutil.JoinPipe(segments)
+	return fmtutil.JoinPipeWrap(segments, wrapWidth())
 }
+
+// wrapWidth returns the visual width JoinPipeWrap should target.
+//
+// Claude Code 2.1.153+ exports COLUMNS to statusline commands. We subtract
+// [wrapSafetyMargin] cells as a buffer: COLUMNS reflects width at script
+// launch (the terminal may have resized since), and empirically rows
+// exactly equal to COLUMNS were observed to drop their rightmost
+// character. The margin is a defensive choice, not a documented host
+// behavior. Returns 0 when COLUMNS is missing, unparseable, or smaller
+// than the safety margin — JoinPipeWrap then falls back to a single line.
+func wrapWidth() int {
+	raw := os.Getenv("COLUMNS")
+	if raw == "" {
+		return 0
+	}
+
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= wrapSafetyMargin {
+		return 0
+	}
+
+	return n - wrapSafetyMargin
+}
+
+const wrapSafetyMargin = 2
 
 // appendRepoSegment renders the combined repo/PR/worktree segment, or falls
 // back to a bare "🌳 worktree 🌿 branch" segment when no repo info is available.

@@ -41,6 +41,13 @@ func insecureCfg() *config.Config {
 func setupTestEnv(t *testing.T) func() {
 	t.Helper()
 
+	// buildStatusline now reads COLUMNS via wrapWidth(). Pin it to "" so that
+	// tests inheriting a narrow developer terminal (or CI runner) don't see
+	// spurious wraps. Tests that exercise the wrap path must call t.Setenv
+	// themselves to opt in.
+	t.Setenv("COLUMNS", "sentinel")
+	os.Unsetenv("COLUMNS")
+
 	dir := t.TempDir()
 
 	origStatusPath := status.CachePath
@@ -763,6 +770,95 @@ func TestBuildStatuslineIndicatorsDisabled(t *testing.T) {
 
 	if !strings.Contains(got, testModelOpus47) {
 		t.Errorf("expected bare model name, got %q", got)
+	}
+}
+
+func TestWrapWidth(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		set  bool
+		want int
+	}{
+		{name: "unset", set: false, want: 0},
+		{name: "empty string", env: "", set: true, want: 0},
+		{name: "non-numeric", env: "abc", set: true, want: 0},
+		{name: "zero", env: "0", set: true, want: 0},
+		{name: "equal to safety margin", env: "2", set: true, want: 0},
+		{name: "negative", env: "-5", set: true, want: 0},
+		{name: "just above margin", env: "3", set: true, want: 1},
+		{name: "typical 80", env: "80", set: true, want: 78},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			if tcase.set {
+				t.Setenv("COLUMNS", tcase.env)
+			} else {
+				// t.Setenv restores on cleanup; unset within the scope.
+				t.Setenv("COLUMNS", "sentinel")
+				os.Unsetenv("COLUMNS")
+			}
+
+			if got := wrapWidth(); got != tcase.want {
+				t.Errorf("wrapWidth() = %d, want %d", got, tcase.want)
+			}
+		})
+	}
+}
+
+func TestBuildStatuslineWrapsOnNarrowColumns(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	t.Setenv("COLUMNS", "30")
+
+	resetsAt := float64(time.Now().Add(3 * time.Hour).Unix())
+	input := fmt.Sprintf(`{
+		"model":{"display_name":"Opus 4.7"},
+		"effort":{"level":"xhigh"},
+		"thinking":{"enabled":true},
+		"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},
+		"context_window":{"used_percentage":67},
+		"rate_limits":{
+			"five_hour":{"used_percentage":50,"resets_at":%f},
+			"seven_day":{"used_percentage":80,"resets_at":%f}
+		}
+	}`, resetsAt, resetsAt)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "\n") {
+		t.Errorf("expected wrapped output on narrow COLUMNS, got single line: %q", got)
+	}
+}
+
+func TestBuildStatuslineStaysSingleLineWithoutColumns(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	keychain.GetFn = func() (string, error) { return "", keychain.ErrNoToken }
+	status.HTTPGetFn = failHTTP
+	usage.HTTPGetFn = failHTTP
+
+	t.Setenv("COLUMNS", "sentinel")
+	os.Unsetenv("COLUMNS")
+
+	resetsAt := float64(time.Now().Add(3 * time.Hour).Unix())
+	input := fmt.Sprintf(`{
+		"model":{"display_name":"Opus 4.7"},
+		"rate_limits":{
+			"five_hour":{"used_percentage":50,"resets_at":%f},
+			"seven_day":{"used_percentage":80,"resets_at":%f}
+		}
+	}`, resetsAt, resetsAt)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if strings.Contains(got, "\n") {
+		t.Errorf("expected single line when COLUMNS unset, got: %q", got)
 	}
 }
 
