@@ -15,6 +15,7 @@ import (
 	"github.com/lexfrei/claudeline/internal/compaction"
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/fmtutil"
+	"github.com/lexfrei/claudeline/internal/gitinfo"
 	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
@@ -59,8 +60,10 @@ type stdinData struct {
 	Thinking struct {
 		Enabled bool `json:"enabled"`
 	} `json:"thinking"`
-	FastMode  bool `json:"fast_mode"` //nolint:tagliatelle // External API format
+	FastMode  bool   `json:"fast_mode"` //nolint:tagliatelle // External API format
+	Cwd       string `json:"cwd"`
 	Workspace struct {
+		CurrentDir  string         `json:"current_dir"`  //nolint:tagliatelle // External API format
 		GitWorktree string         `json:"git_worktree"` //nolint:tagliatelle // External API format
 		Repo        *stdinRepoInfo `json:"repo"`
 	} `json:"workspace"`
@@ -285,11 +288,33 @@ func appendRepoSegment(segments []string, data *stdinData, cfg *config.Config) [
 		return append(segments, formatRepoSegment(data))
 	}
 
-	if cfg.Segments.Worktree && data.Workspace.GitWorktree != "" {
-		return append(segments, "🌿 "+data.Workspace.GitWorktree)
+	if cfg.Segments.Worktree {
+		if branch := branchOrWorktree(data); branch != "" {
+			return append(segments, "🌿 "+branch)
+		}
 	}
 
 	return segments
+}
+
+// branchOrWorktree returns the current branch read from .git/HEAD, or falls
+// back to workspace.git_worktree when the branch cannot be determined
+// (detached HEAD, unreadable repo, non-git cwd).
+func branchOrWorktree(data *stdinData) string {
+	if branch := gitinfo.CurrentBranch(resolveCwd(data)); branch != "" {
+		return branch
+	}
+
+	return data.Workspace.GitWorktree
+}
+
+// resolveCwd picks the most specific cwd value Claude Code provides.
+func resolveCwd(data *stdinData) string {
+	if data.Workspace.CurrentDir != "" {
+		return data.Workspace.CurrentDir
+	}
+
+	return data.Cwd
 }
 
 // formatRepoSegment builds the combined repo segment:
@@ -313,8 +338,8 @@ func formatRepoSegment(data *stdinData) string {
 		parts = append(parts, prPart)
 	}
 
-	if data.Workspace.GitWorktree != "" {
-		parts = append(parts, "@ "+data.Workspace.GitWorktree)
+	if branch := branchOrWorktree(data); branch != "" {
+		parts = append(parts, "@ "+branch)
 	}
 
 	return strings.Join(parts, " ")

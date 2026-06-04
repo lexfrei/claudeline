@@ -368,6 +368,119 @@ func TestBuildStatuslineRepoDisabledFallsBackToWorktree(t *testing.T) {
 	}
 }
 
+func TestBuildStatuslineRepoSegmentUsesBranchFromCwd(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/feat/from-head\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	input := fmt.Sprintf(
+		`{"workspace":{"current_dir":%q,"repo":{"host":"github.com","owner":"o","name":"r"}}}`,
+		dir,
+	)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🐙 o/r @ feat/from-head") {
+		t.Errorf("expected branch from .git/HEAD, got %q", got)
+	}
+}
+
+func TestBuildStatuslineRepoSegmentBranchPrefersOverWorktreeName(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/feat/from-head\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both `git_worktree` and a readable HEAD are present — branch wins.
+	input := fmt.Sprintf(
+		`{"workspace":{"current_dir":%q,"git_worktree":"side","repo":{"host":"github.com","owner":"o","name":"r"}}}`,
+		dir,
+	)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🐙 o/r @ feat/from-head") {
+		t.Errorf("expected branch to win over worktree name, got %q", got)
+	}
+}
+
+func TestBuildStatuslineRepoSegmentFallsBackToWorktreeNameWhenDetached(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Detached HEAD — gitinfo returns empty, so we fall back to git_worktree.
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("3a7c2f1e0d8b9f4a5c6e7d8b9f4a5c6e7d8b9f4a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	input := fmt.Sprintf(
+		`{"workspace":{"current_dir":%q,"git_worktree":"side","repo":{"host":"github.com","owner":"o","name":"r"}}}`,
+		dir,
+	)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🐙 o/r @ side") {
+		t.Errorf("expected fallback to worktree name on detached HEAD, got %q", got)
+	}
+}
+
+func TestBuildStatuslineBareWorktreeSegmentShowsBranch(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/feat/bare\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// No workspace.repo — falls back to bare worktree segment, but now shows
+	// the branch read from cwd's .git/HEAD instead of being empty.
+	input := fmt.Sprintf(`{"workspace":{"current_dir":%q}}`, dir)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🌿 feat/bare") {
+		t.Errorf("expected bare worktree segment with branch from HEAD, got %q", got)
+	}
+}
+
 func TestBuildStatuslineBothRepoAndWorktreeDisabled(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
