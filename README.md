@@ -38,9 +38,9 @@ Renders when Claude Code reports `workspace.repo` (a git remote pointing at a kn
 
   - `🐙` github.com, `🦊` gitlab.com, `🪣` bitbucket.org, `📦` other hosts (with `host/` prefix)
   - `#N` followed by review state: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
-  - `@ branch` when inside a linked worktree
+  - `@ branch` — current branch read directly from `cwd/.git/HEAD`, or the linked-worktree name when HEAD is detached or unreadable
 
-When no `workspace.repo` is present (non-git or detached state), the segment falls back to the bare worktree form (`🌿 branch`).
+When no `workspace.repo` is present (non-git directory), the segment falls back to the bare worktree form (`🌿 branch`) showing the same branch source.
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
 
@@ -71,6 +71,7 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 - Claude Code v2.1.97+ recommended (adds `workspace.git_worktree` and `refreshInterval`)
 - Claude Code v2.1.119+ enables effort, thinking, and fast-mode indicators
 - Claude Code v2.1.145+ enables the combined repo / PR segment
+- Current branch in `@ branch` is read directly from `cwd/.git/HEAD`, no `git` binary required
 
 ## Installation
 
