@@ -282,30 +282,51 @@ func buildStatusline(raw []byte, cfg *config.Config) string {
 }
 
 // appendRepoSegment renders the combined repo/PR/worktree segment, or falls
-// back to the bare worktree segment when no repo info is available.
+// back to a bare "🌳 worktree 🌿 branch" segment when no repo info is available.
 func appendRepoSegment(segments []string, data *stdinData, cfg *config.Config) []string {
 	if cfg.Segments.Repo && data.Workspace.Repo != nil {
 		return append(segments, formatRepoSegment(data))
 	}
 
 	if cfg.Segments.Worktree {
-		if branch := branchOrWorktree(data); branch != "" {
-			return append(segments, "🌿 "+branch)
+		if parts := worktreeBranchParts(data); len(parts) > 0 {
+			return append(segments, strings.Join(parts, " "))
 		}
 	}
 
 	return segments
 }
 
-// branchOrWorktree returns the current branch read from .git/HEAD, or falls
-// back to workspace.git_worktree when the branch cannot be determined
-// (detached HEAD, unreadable repo, non-git cwd).
-func branchOrWorktree(data *stdinData) string {
-	if branch := gitinfo.CurrentBranch(resolveCwd(data)); branch != "" {
-		return branch
+// worktreeBranchParts returns the display parts identifying where work happens:
+// "🌳 <name>" when cwd is a linked worktree, and "🌿 <branch>" for the current
+// branch read from cwd/.git/HEAD. Either part may be absent.
+//
+// The same name is never printed under both markers. In the main clone the
+// worktree marker is omitted (the name would just duplicate the repo name). When
+// a linked worktree's branch equals its directory name — the common
+// `git worktree add ../feat-x feat-x` pattern — the branch marker is dropped
+// since 🌳 already shows it. And when HEAD carries no branch (detached or
+// unreadable), the branch marker falls back to the stdin worktree name only if
+// no 🌳 marker is already shown.
+func worktreeBranchParts(data *stdinData) []string {
+	cwd := resolveCwd(data)
+	worktree := gitinfo.LinkedWorktreeName(cwd)
+	branch := gitinfo.CurrentBranch(cwd)
+
+	var parts []string
+
+	if worktree != "" {
+		parts = append(parts, "🌳 "+worktree)
 	}
 
-	return data.Workspace.GitWorktree
+	switch {
+	case branch != "" && branch != worktree:
+		parts = append(parts, "🌿 "+branch)
+	case branch == "" && worktree == "" && data.Workspace.GitWorktree != "":
+		parts = append(parts, "🌿 "+data.Workspace.GitWorktree)
+	}
+
+	return parts
 }
 
 // resolveCwd picks the most specific cwd value Claude Code provides.
@@ -319,10 +340,11 @@ func resolveCwd(data *stdinData) string {
 
 // formatRepoSegment builds the combined repo segment:
 //
-//	🐙 owner/repo [#N <state>] [@ worktree]
+//	🐙 owner/repo [#N <state>] [🌳 worktree] [🌿 branch]
 //
 // Host icon varies by `workspace.repo.host`; unknown hosts surface as
-// "📦 host/owner/repo" so the source is still legible.
+// "📦 host/owner/repo" so the source is still legible. The 🌳 worktree marker
+// appears only inside a linked worktree.
 func formatRepoSegment(data *stdinData) string {
 	repo := data.Workspace.Repo
 	icon, prefix := repoHostIcon(repo.Host)
@@ -338,9 +360,7 @@ func formatRepoSegment(data *stdinData) string {
 		parts = append(parts, prPart)
 	}
 
-	if branch := branchOrWorktree(data); branch != "" {
-		parts = append(parts, "@ "+branch)
-	}
+	parts = append(parts, worktreeBranchParts(data)...)
 
 	return strings.Join(parts, " ")
 }

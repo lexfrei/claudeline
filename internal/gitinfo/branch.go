@@ -43,34 +43,48 @@ func CurrentBranch(cwd string) string {
 }
 
 func resolveHeadPath(cwd string) (string, bool) {
+	gitDir, _, ok := resolveGitDir(cwd)
+	if !ok {
+		return "", false
+	}
+
+	return filepath.Join(gitDir, "HEAD"), true
+}
+
+// resolveGitDir returns the git directory that backs cwd and whether cwd is a
+// linked worktree. A regular repo has a .git directory and reports linked=false;
+// a linked worktree has a .git *file* containing "gitdir: <path>" and reports
+// linked=true. ok is false when cwd is not inside a git repository or the
+// pointer file is unreadable or malformed.
+func resolveGitDir(cwd string) (gitDir string, linked, ok bool) {
 	gitPath := filepath.Join(cwd, ".git")
 
 	info, err := os.Stat(gitPath)
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 
 	if info.IsDir() {
-		return filepath.Join(gitPath, "HEAD"), true
+		return gitPath, false, true
 	}
 
 	// Linked worktree: .git is a file containing "gitdir: <path>".
 	content, err := os.ReadFile(gitPath)
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 
 	line := strings.TrimSpace(string(content))
 
 	const gitdirPrefix = "gitdir: "
 	if !strings.HasPrefix(line, gitdirPrefix) {
-		return "", false
+		return "", false, false
 	}
 
-	gitdir := strings.TrimPrefix(line, gitdirPrefix)
-	if !filepath.IsAbs(gitdir) {
-		gitdir = filepath.Join(cwd, gitdir)
+	gitDir = strings.TrimPrefix(line, gitdirPrefix)
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(cwd, gitDir)
 	}
 
-	return filepath.Join(gitdir, "HEAD"), true
+	return gitDir, true, true
 }

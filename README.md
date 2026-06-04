@@ -9,7 +9,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ## Example output
 
 ```text
-🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline #19 📝 @ feat-api
+🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline #19 📝 🌳 feat-api 🌿 feat/api
 ```
 
 ## Segments
@@ -17,8 +17,8 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 | Segment | Description |
 | --- | --- |
 | 🤖 Model | Active model name, with effort / thinking / fast-mode indicators (Claude Code v2.1.119+) |
-| 🐙 Repo | Repository host icon, `owner/name`, optional `#PR <state>`, optional `@ worktree` (Claude Code v2.1.145+) |
-| 🌿 Worktree | Bare worktree fallback when no repository info is available |
+| 🐙 Repo | Repository host icon, `owner/name`, optional `#PR <state>`, optional `🌳 worktree` (linked worktrees only) and `🌿 branch` (Claude Code v2.1.145+) |
+| 🌳 Worktree / 🌿 Branch | Linked-worktree directory name and current branch; branch alone falls back here when no repository info is available |
 | 💰 Cost | Cumulative session cost in USD (hidden by default for subscribers, see [Cost mode](#cost-mode)) |
 | ⚠️/🔶/🔴 Status | Anthropic platform status: ⚠️ degraded, 🔶 major outage, 🔴 critical (hidden when all clear) |
 | 🧠 Context | Context window usage percentage (color-coded) |
@@ -38,9 +38,10 @@ Renders when Claude Code reports `workspace.repo` (a git remote pointing at a kn
 
   - `🐙` github.com, `🦊` gitlab.com, `🪣` bitbucket.org, `📦` other hosts (with `host/` prefix)
   - `#N` followed by review state: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
-  - `@ branch` — current branch read directly from `cwd/.git/HEAD`, or the linked-worktree name when HEAD is detached or unreadable
+  - `🌳 worktree` — directory name of the linked worktree, shown only when `cwd` is a linked worktree (in the main clone it would just duplicate the repo name, so it is omitted)
+  - `🌿 branch` — current branch read directly from `cwd/.git/HEAD`; when HEAD is detached or unreadable it falls back to the worktree name from stdin, but only if the `🌳` marker is not already shown (so the same name is never printed twice)
 
-When no `workspace.repo` is present (non-git directory), the segment falls back to the bare worktree form (`🌿 branch`) showing the same branch source.
+When no `workspace.repo` is present (non-git directory), the segment falls back to the bare `🌳 worktree 🌿 branch` form showing the same sources.
 
 Quota indicators compare your usage rate against elapsed time to warn about hitting limits:
 
@@ -71,7 +72,7 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 - Claude Code v2.1.97+ recommended (adds `workspace.git_worktree` and `refreshInterval`)
 - Claude Code v2.1.119+ enables effort, thinking, and fast-mode indicators
 - Claude Code v2.1.145+ enables the combined repo / PR segment
-- Current branch in `@ branch` is read directly from `cwd/.git/HEAD`, no `git` binary required
+- Current branch in `🌿 branch` is read directly from `cwd/.git/HEAD`, no `git` binary required
 
 ## Installation
 
