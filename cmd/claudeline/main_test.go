@@ -250,6 +250,142 @@ func TestBuildStatuslineWorktreeDisabled(t *testing.T) {
 	}
 }
 
+func TestBuildStatuslineRepoSegment(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "github repo only",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}}}`,
+			expected: "🐙 lexfrei/claudeline",
+		},
+		{
+			name:     "github repo with worktree",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"},"git_worktree":"feat-api"}}`,
+			expected: "🐙 lexfrei/claudeline @ feat-api",
+		},
+		{
+			name:     "github repo with draft PR",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},"pr":{"number":19,"review_state":"draft"}}`,
+			expected: "🐙 lexfrei/claudeline #19 📝",
+		},
+		{
+			name:     "github repo with approved PR and worktree",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"},"git_worktree":"feat-api"},"pr":{"number":42,"review_state":"approved"}}`,
+			expected: "🐙 lexfrei/claudeline #42 ✅ @ feat-api",
+		},
+		{
+			name:     "changes_requested",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"changes_requested"}}`,
+			expected: "🐙 a/b #1 🔴",
+		},
+		{
+			name:     "commented",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"commented"}}`,
+			expected: "🐙 a/b #1 💬",
+		},
+		{
+			name:     "pending review",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"pending"}}`,
+			expected: "🐙 a/b #1 👀",
+		},
+		{
+			name:     "PR without known review_state hides state icon",
+			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"unknown"}}`,
+			expected: "🐙 a/b #1",
+		},
+		{
+			name:     "gitlab host",
+			input:    `{"workspace":{"repo":{"host":"gitlab.com","owner":"group","name":"proj"}}}`,
+			expected: "🦊 group/proj",
+		},
+		{
+			name:     "bitbucket host",
+			input:    `{"workspace":{"repo":{"host":"bitbucket.org","owner":"team","name":"app"}}}`,
+			expected: "🪣 team/app",
+		},
+		{
+			name:     "unknown host surfaces host prefix",
+			input:    `{"workspace":{"repo":{"host":"git.example.com","owner":"o","name":"r"}}}`,
+			expected: "📦 git.example.com/o/r",
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			got := buildStatusline([]byte(tcase.input), defaultCfg())
+			if !strings.Contains(got, tcase.expected) {
+				t.Errorf("expected %q in %q", tcase.expected, got)
+			}
+		})
+	}
+}
+
+func TestBuildStatuslineRepoFallbackToWorktree(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	// No repo info — should render bare worktree segment.
+	input := `{"workspace":{"git_worktree":"feat-api"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if !strings.Contains(got, "🌿 feat-api") {
+		t.Errorf("expected bare worktree fallback, got %q", got)
+	}
+
+	if strings.Contains(got, "🐙") {
+		t.Errorf("expected no repo icon when repo absent, got %q", got)
+	}
+}
+
+func TestBuildStatuslineRepoDisabledFallsBackToWorktree(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Repo = false
+
+	input := `{"workspace":{"repo":{"host":"github.com","owner":"o","name":"r"},"git_worktree":"feat-api"}}`
+
+	got := buildStatusline([]byte(input), cfg)
+	if !strings.Contains(got, "🌿 feat-api") {
+		t.Errorf("expected bare worktree fallback when repo disabled, got %q", got)
+	}
+
+	if strings.Contains(got, "🐙") {
+		t.Errorf("expected no repo segment when disabled, got %q", got)
+	}
+}
+
+func TestBuildStatuslineBothRepoAndWorktreeDisabled(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	cfg := defaultCfg()
+	cfg.Segments.Repo = false
+	cfg.Segments.Worktree = false
+
+	input := `{"workspace":{"repo":{"host":"github.com","owner":"o","name":"r"},"git_worktree":"feat-api"}}`
+
+	got := buildStatusline([]byte(input), cfg)
+	if strings.Contains(got, "🐙") || strings.Contains(got, "🌿") {
+		t.Errorf("expected no repo or worktree segment, got %q", got)
+	}
+}
+
 func TestBuildStatuslineWithModel(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
