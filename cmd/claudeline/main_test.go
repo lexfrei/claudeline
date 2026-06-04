@@ -267,9 +267,9 @@ func TestBuildStatuslineRepoSegment(t *testing.T) {
 			expected: "🐙 lexfrei/claudeline",
 		},
 		{
-			name:     "github repo with worktree",
+			name:     "github repo with branch fallback",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"},"git_worktree":"feat-api"}}`,
-			expected: "🐙 lexfrei/claudeline @ feat-api",
+			expected: "🐙 lexfrei/claudeline 🌿 feat-api",
 		},
 		{
 			name:     "github repo with draft PR",
@@ -277,9 +277,9 @@ func TestBuildStatuslineRepoSegment(t *testing.T) {
 			expected: "🐙 lexfrei/claudeline #19 📝",
 		},
 		{
-			name:     "github repo with approved PR and worktree",
+			name:     "github repo with approved PR and branch",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"},"git_worktree":"feat-api"},"pr":{"number":42,"review_state":"approved"}}`,
-			expected: "🐙 lexfrei/claudeline #42 ✅ @ feat-api",
+			expected: "🐙 lexfrei/claudeline #42 ✅ 🌿 feat-api",
 		},
 		{
 			name:     "changes_requested",
@@ -391,7 +391,7 @@ func TestBuildStatuslineRepoSegmentUsesBranchFromCwd(t *testing.T) {
 	)
 
 	got := buildStatusline([]byte(input), defaultCfg())
-	if !strings.Contains(got, "🐙 o/r @ feat/from-head") {
+	if !strings.Contains(got, "🐙 o/r 🌿 feat/from-head") {
 		t.Errorf("expected branch from .git/HEAD, got %q", got)
 	}
 }
@@ -420,8 +420,140 @@ func TestBuildStatuslineRepoSegmentBranchPrefersOverWorktreeName(t *testing.T) {
 	)
 
 	got := buildStatusline([]byte(input), defaultCfg())
-	if !strings.Contains(got, "🐙 o/r @ feat/from-head") {
+	if !strings.Contains(got, "🐙 o/r 🌿 feat/from-head") {
 		t.Errorf("expected branch to win over worktree name, got %q", got)
+	}
+}
+
+func TestBuildStatuslineRepoSegmentShowsLinkedWorktreeAndBranch(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	root := t.TempDir()
+	worktreeGitdir := filepath.Join(root, "main", ".git", "worktrees", "side")
+	worktreeDir := filepath.Join(root, "side")
+
+	if err := os.MkdirAll(worktreeGitdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(worktreeGitdir, "HEAD"), []byte("ref: refs/heads/feat/side\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte("gitdir: "+worktreeGitdir+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inside a linked worktree both markers appear: 🌳 worktree dir name, then
+	// 🌿 branch from its HEAD.
+	input := fmt.Sprintf(
+		`{"workspace":{"current_dir":%q,"repo":{"host":"github.com","owner":"o","name":"r"}}}`,
+		worktreeDir,
+	)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🐙 o/r 🌳 side 🌿 feat/side") {
+		t.Errorf("expected linked worktree and branch markers, got %q", got)
+	}
+}
+
+func TestBuildStatuslineLinkedWorktreeBranchEqualsDirShowsNoDuplicate(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	root := t.TempDir()
+	worktreeGitdir := filepath.Join(root, "main", ".git", "worktrees", "side")
+	worktreeDir := filepath.Join(root, "side")
+
+	if err := os.MkdirAll(worktreeGitdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// The common `git worktree add ../side side` pattern: the worktree dir name
+	// and the branch are both "side". The branch marker must be dropped so the
+	// name is not printed twice (🌳 already shows it).
+	if err := os.WriteFile(filepath.Join(worktreeGitdir, "HEAD"), []byte("ref: refs/heads/side\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte("gitdir: "+worktreeGitdir+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	input := fmt.Sprintf(
+		`{"workspace":{"current_dir":%q,"repo":{"host":"github.com","owner":"o","name":"r"}}}`,
+		worktreeDir,
+	)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🐙 o/r 🌳 side") {
+		t.Errorf("expected worktree marker, got %q", got)
+	}
+
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no branch marker when branch equals worktree dir name, got %q", got)
+	}
+
+	if n := strings.Count(got, "side"); n != 1 {
+		t.Errorf("expected the worktree name to appear exactly once, got %d in %q", n, got)
+	}
+}
+
+func TestBuildStatuslineLinkedWorktreeDetachedHeadShowsNoDuplicate(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	root := t.TempDir()
+	worktreeGitdir := filepath.Join(root, "main", ".git", "worktrees", "side")
+	worktreeDir := filepath.Join(root, "side")
+
+	if err := os.MkdirAll(worktreeGitdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Detached HEAD inside a linked worktree: HEAD is a SHA, not a ref.
+	if err := os.WriteFile(filepath.Join(worktreeGitdir, "HEAD"), []byte("3a7c2f1e0d8b9f4a5c6e7d8b9f4a5c6e7d8b9f4a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte("gitdir: "+worktreeGitdir+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claude Code's git_worktree equals the worktree dir name. The branch
+	// marker must NOT fall back to it here — that would duplicate "side" under
+	// both 🌳 and 🌿. Only the 🌳 marker is shown; there is no branch.
+	input := fmt.Sprintf(
+		`{"workspace":{"current_dir":%q,"git_worktree":"side","repo":{"host":"github.com","owner":"o","name":"r"}}}`,
+		worktreeDir,
+	)
+
+	got := buildStatusline([]byte(input), defaultCfg())
+	if !strings.Contains(got, "🐙 o/r 🌳 side") {
+		t.Errorf("expected worktree marker, got %q", got)
+	}
+
+	if strings.Contains(got, "🌿") {
+		t.Errorf("expected no branch marker on detached HEAD in a linked worktree, got %q", got)
 	}
 }
 
@@ -449,7 +581,7 @@ func TestBuildStatuslineRepoSegmentFallsBackToWorktreeNameWhenDetached(t *testin
 	)
 
 	got := buildStatusline([]byte(input), defaultCfg())
-	if !strings.Contains(got, "🐙 o/r @ side") {
+	if !strings.Contains(got, "🐙 o/r 🌿 side") {
 		t.Errorf("expected fallback to worktree name on detached HEAD, got %q", got)
 	}
 }
