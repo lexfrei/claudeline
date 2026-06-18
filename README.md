@@ -91,6 +91,12 @@ Disable with `--no-offpeak` or `offpeak = false` in config.
 brew install lexfrei/tap/claudeline
 ```
 
+### mise
+
+```bash
+mise use -g aqua:lexfrei/claudeline
+```
+
 ### From source
 
 ```bash
