@@ -100,6 +100,12 @@ Set via `--cost auto|true|false` or `cost = "auto"` in config.
 brew install lexfrei/tap/claudeline
 ```
 
+### mise
+
+```bash
+mise use -g aqua:lexfrei/claudeline
+```
+
 ### From source
 
 ```bash
