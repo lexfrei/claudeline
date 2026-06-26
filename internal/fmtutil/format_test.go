@@ -10,6 +10,9 @@ import (
 // both JoinPipe and JoinPipeWrap, which must agree on the single-line form.
 const wantPipeJoinABC = "a | b | c"
 
+// testPRNumber is a sample PR-number label reused across Part fixtures.
+const testPRNumber = "#19"
+
 func TestDuration(t *testing.T) {
 	t.Parallel()
 
@@ -314,6 +317,35 @@ func TestFormatRateLimitSegment(t *testing.T) {
 
 			if got := FormatRateLimitSegment(tt.input); got != tt.expected {
 				t.Errorf("FormatRateLimitSegment() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPart(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		text  string
+		icons []string
+		want  string
+	}{
+		{"leading icon and text", "lexfrei/claudeline", []string{"🐙"}, "🐙 lexfrei/claudeline"},
+		{"review icon left of number", testPRNumber, []string{"📝"}, "📝 " + testPRNumber},
+		{"leading plus one sub-icon", "7d: 42% (4d 2h)", []string{"🟡", "⬆"}, "🟡 7d: 42% (4d 2h) ⬆"},
+		{"sub-icons glued without separators", "Opus 4.7", []string{"🤖", "⏫", "💭", "⚡"}, "🤖 Opus 4.7 ⏫💭⚡"},
+		{"empty sub-icons ignored", "Opus 4.7", []string{"🤖", "", ""}, "🤖 Opus 4.7"},
+		{"zero icons yields text only", testPRNumber, nil, testPRNumber},
+		{"single icon before count", "2", []string{"🔄"}, "🔄 2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := Part(tt.text, tt.icons...); got != tt.want {
+				t.Errorf("Part(%q, %v) = %q, want %q", tt.text, tt.icons, got, tt.want)
 			}
 		})
 	}

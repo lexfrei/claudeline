@@ -342,14 +342,14 @@ func worktreeBranchParts(data *stdinData) []string {
 	var parts []string
 
 	if worktree != "" {
-		parts = append(parts, "🌳 "+worktree)
+		parts = append(parts, fmtutil.Part(worktree, "🌳"))
 	}
 
 	switch {
 	case branch != "" && branch != worktree:
-		parts = append(parts, "🌿 "+branch)
+		parts = append(parts, fmtutil.Part(branch, "🌿"))
 	case branch == "" && worktree == "" && data.Workspace.GitWorktree != "":
-		parts = append(parts, "🌿 "+data.Workspace.GitWorktree)
+		parts = append(parts, fmtutil.Part(data.Workspace.GitWorktree, "🌿"))
 	}
 
 	return parts
@@ -375,15 +375,15 @@ func formatRepoSegment(data *stdinData) string {
 	repo := data.Workspace.Repo
 	icon, prefix := repoHostIcon(repo.Host)
 
-	parts := []string{icon + " " + prefix + repo.Owner + "/" + repo.Name}
+	parts := []string{fmtutil.Part(prefix+repo.Owner+"/"+repo.Name, icon)}
 
 	if data.PR != nil && data.PR.Number > 0 {
-		prPart := fmt.Sprintf("#%d", data.PR.Number)
+		number := fmt.Sprintf("#%d", data.PR.Number)
 		if state := prReviewIcon(data.PR.ReviewState); state != "" {
-			prPart = state + " " + prPart
+			parts = append(parts, fmtutil.Part(number, state))
+		} else {
+			parts = append(parts, number)
 		}
-
-		parts = append(parts, prPart)
 	}
 
 	parts = append(parts, worktreeBranchParts(data)...)
@@ -434,36 +434,32 @@ func appendIdentitySegments(segments []string, data *stdinData, cfg *config.Conf
 			model = data.Model.DisplayName
 		}
 
-		if suffix := formatModelSuffix(data, cfg); suffix != "" {
-			model += " " + suffix
-		}
-
-		segments = append(segments, "🤖 "+model)
+		segments = append(segments, fmtutil.Part(model, append([]string{"🤖"}, modelSubIcons(data, cfg)...)...))
 	}
 
 	return segments
 }
 
-// formatModelSuffix builds the indicator suffix appended to the model name.
-// Combines effort level, thinking, and fast-mode flags into a single string.
-func formatModelSuffix(data *stdinData, cfg *config.Config) string {
-	var parts []string
+// modelSubIcons returns the qualifier icons shown to the right of the model
+// name: effort level, thinking, and fast-mode. Empty when none apply.
+func modelSubIcons(data *stdinData, cfg *config.Config) []string {
+	var icons []string
 
 	if cfg.Segments.Effort {
 		if e := effortIndicator(data.Effort.Level); e != "" {
-			parts = append(parts, e)
+			icons = append(icons, e)
 		}
 	}
 
 	if cfg.Segments.Thinking && data.Thinking.Enabled {
-		parts = append(parts, "💭")
+		icons = append(icons, "💭")
 	}
 
 	if cfg.Segments.FastMode && data.FastMode {
-		parts = append(parts, "⚡")
+		icons = append(icons, "⚡")
 	}
 
-	return strings.Join(parts, "")
+	return icons
 }
 
 func effortIndicator(level string) string {
@@ -484,7 +480,7 @@ func effortIndicator(level string) string {
 // appendCostAndStatusSegments adds cost and platform status segments.
 func appendCostAndStatusSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if shouldShowCost(cfg.Segments.Cost, data.RateLimits.FiveHour != nil || data.RateLimits.SevenDay != nil) {
-		segments = append(segments, fmt.Sprintf("💰 $%.2f", data.Cost.TotalCostUSD))
+		segments = append(segments, fmtutil.Part(fmt.Sprintf("$%.2f", data.Cost.TotalCostUSD), "💰"))
 	}
 
 	if cfg.Segments.Status {
@@ -504,7 +500,7 @@ func appendContextSegments(segments []string, data *stdinData, cfg *config.Confi
 
 	if cfg.Segments.Compactions {
 		if compactions := compaction.CountCompactions(data.TranscriptPath); compactions > 0 {
-			segments = append(segments, fmt.Sprintf("🔄 %d", compactions))
+			segments = append(segments, fmtutil.Part(strconv.Itoa(compactions), "🔄"))
 		}
 	}
 
@@ -622,8 +618,8 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string
 	}
 
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
-		segments = append(segments, fmt.Sprintf("💳 $%.0f/$%.0f",
-			usageData.Extra.UsedCredits, usageData.Extra.MonthlyLimit))
+		segments = append(segments, fmtutil.Part(fmt.Sprintf("$%.0f/$%.0f",
+			usageData.Extra.UsedCredits, usageData.Extra.MonthlyLimit), "💳"))
 	}
 
 	return segments

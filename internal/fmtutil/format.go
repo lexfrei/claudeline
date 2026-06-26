@@ -90,7 +90,7 @@ func ContextSegment(pct float64) string {
 		color = ansiGreen
 	}
 
-	return fmt.Sprintf("%s🧠 %d%%%s", color, rounded, ansiReset)
+	return color + Part(fmt.Sprintf("%d%%", rounded), "🧠") + ansiReset
 }
 
 // ParseISOUTC parses an ISO-8601 timestamp to UTC time.
@@ -117,6 +117,31 @@ func ParseISOUTC(raw string) (time.Time, error) {
 // JoinPipe joins string segments with " | " separator.
 func JoinPipe(parts []string) string {
 	return strings.Join(parts, " | ")
+}
+
+// Part renders a statusline part from its text and zero or more icons. The
+// first icon (when present and non-empty) is the leading icon, placed to the
+// left of the text; any further icons are qualifiers of the entity (e.g. the
+// model's effort/thinking/fast-mode markers) and are glued to the right without
+// separators: "icon text subicons". Zero icons is valid and yields just the
+// text — the case a no-emoji theme relies on.
+func Part(text string, icons ...string) string {
+	var lead, sub string
+	if len(icons) > 0 {
+		lead = icons[0]
+		sub = strings.Join(icons[1:], "")
+	}
+
+	out := text
+	if lead != "" {
+		out = lead + " " + text
+	}
+
+	if sub != "" {
+		out += " " + sub
+	}
+
+	return out
 }
 
 // Quota window constants.
@@ -164,7 +189,7 @@ func FormatStaleQuotaWindow(win *QuotaWindow, label string) string {
 	indicator := RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s %s: ?%% (%s)", indicator, label, dur)
+	return Part(fmt.Sprintf("%s: ?%% (%s)", label, dur), indicator)
 }
 
 // FormatQuotaWindow formats a single quota window for display.
@@ -173,20 +198,20 @@ func FormatQuotaWindow(win *QuotaWindow, label string) string {
 	indicator := RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s %s: %d%% (%s)", indicator, label, pct, dur)
+	return Part(fmt.Sprintf("%s: %d%% (%s)", label, pct, dur), indicator)
 }
 
 // FormatRateLimitSegment formats the explicit exhausted-limit segment.
 func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
 	if exhausted == nil {
-		return "⛔ limit hit"
+		return Part("limit hit", "⛔")
 	}
 
 	if exhausted.Minutes <= 0 {
-		return fmt.Sprintf("⛔ %s limit hit", exhausted.Name)
+		return Part(exhausted.Name+" limit hit", "⛔")
 	}
 
-	return fmt.Sprintf("⛔ %s limit hit (%s)", exhausted.Name, Duration(exhausted.Minutes))
+	return Part(fmt.Sprintf("%s limit hit (%s)", exhausted.Name, Duration(exhausted.Minutes)), "⛔")
 }
 
 // FindExhaustedWindow returns the most saturated active window that is exhausted.
