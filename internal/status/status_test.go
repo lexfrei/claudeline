@@ -8,10 +8,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 )
 
 var errTest = errors.New("test error")
+
+// useTextStyle switches the global icon style to text for one test, restoring
+// it after. Not parallel-safe: Style is shared process state.
+func useTextStyle(t *testing.T) {
+	t.Helper()
+
+	prev := fmtutil.Style
+	fmtutil.Style = fmtutil.StyleText
+
+	t.Cleanup(func() { fmtutil.Style = prev })
+}
 
 func TestFetchAlertCached(t *testing.T) {
 	dir := t.TempDir()
@@ -20,7 +32,8 @@ func TestFetchAlertCached(t *testing.T) {
 
 	defer func() { CachePath = origPath }()
 
-	err := os.WriteFile(CachePath, []byte("🔶 major outage"), 0o600)
+	// The cache holds the raw indicator; FetchAlert renders it at read time.
+	err := os.WriteFile(CachePath, []byte(IndicatorMajor), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +41,65 @@ func TestFetchAlertCached(t *testing.T) {
 	got := FetchAlert()
 	if got != "🔶 major outage" {
 		t.Errorf("expected cached alert, got %q", got)
+	}
+}
+
+func TestFetchAlertCachesRawIndicator(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	origHTTP := HTTPGetFn
+
+	CachePath = filepath.Join(dir, "status-cache.json")
+
+	defer func() {
+		CachePath = origPath
+		HTTPGetFn = origHTTP
+	}()
+
+	HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
+		return &httpclient.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`{"status":{"indicator":"minor"}}`),
+		}, nil
+	}
+
+	FetchAlert()
+
+	cached, err := os.ReadFile(CachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Storing the raw indicator (not a rendered string) is what lets a theme
+	// switch take effect on the next read instead of lagging the TTL.
+	if string(cached) != IndicatorMinor {
+		t.Errorf("expected raw indicator cached, got %q", string(cached))
+	}
+}
+
+func TestFetchAlertTextTheme(t *testing.T) {
+	dir := t.TempDir()
+	origPath := CachePath
+	CachePath = filepath.Join(dir, "status-cache.json")
+
+	defer func() { CachePath = origPath }()
+
+	useTextStyle(t)
+
+	cases := map[string]string{
+		IndicatorCritical: fmtutil.PartStyled(fmtutil.StyleText, "critical outage", "🔴"),
+		IndicatorMajor:    "major outage",
+		IndicatorMinor:    "degraded",
+	}
+
+	for indicator, want := range cases {
+		if err := os.WriteFile(CachePath, []byte(indicator), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := FetchAlert(); got != want {
+			t.Errorf("text theme %q = %q, want %q", indicator, got, want)
+		}
 	}
 }
 
