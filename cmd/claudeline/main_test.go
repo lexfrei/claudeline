@@ -281,27 +281,27 @@ func TestBuildStatuslineRepoSegment(t *testing.T) {
 		{
 			name:     "github repo with draft PR",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},"pr":{"number":19,"review_state":"draft"}}`,
-			expected: "🐙 lexfrei/claudeline #19 📝",
+			expected: "🐙 lexfrei/claudeline 📝 #19",
 		},
 		{
 			name:     "github repo with approved PR and branch",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"},"git_worktree":"feat-api"},"pr":{"number":42,"review_state":"approved"}}`,
-			expected: "🐙 lexfrei/claudeline #42 ✅ 🌿 feat-api",
+			expected: "🐙 lexfrei/claudeline ✅ #42 🌿 feat-api",
 		},
 		{
 			name:     "changes_requested",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"changes_requested"}}`,
-			expected: "🐙 a/b #1 🔴",
+			expected: "🐙 a/b 🔴 #1",
 		},
 		{
 			name:     "commented",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"commented"}}`,
-			expected: "🐙 a/b #1 💬",
+			expected: "🐙 a/b 💬 #1",
 		},
 		{
 			name:     "pending review",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"pending"}}`,
-			expected: "🐙 a/b #1 👀",
+			expected: "🐙 a/b 👀 #1",
 		},
 		{
 			name:     "PR without known review_state hides state icon",

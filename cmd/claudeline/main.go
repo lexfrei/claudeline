@@ -366,7 +366,7 @@ func resolveCwd(data *stdinData) string {
 
 // formatRepoSegment builds the combined repo segment:
 //
-//	🐙 owner/repo [#N <state>] [🌳 worktree] [🌿 branch]
+//	🐙 owner/repo [<state> #N] [🌳 worktree] [🌿 branch]
 //
 // Host icon varies by `workspace.repo.host`; unknown hosts surface as
 // "📦 host/owner/repo" so the source is still legible. The 🌳 worktree marker
@@ -380,7 +380,7 @@ func formatRepoSegment(data *stdinData) string {
 	if data.PR != nil && data.PR.Number > 0 {
 		prPart := fmt.Sprintf("#%d", data.PR.Number)
 		if state := prReviewIcon(data.PR.ReviewState); state != "" {
-			prPart += " " + state
+			prPart = state + " " + prPart
 		}
 
 		parts = append(parts, prPart)

@@ -9,7 +9,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ## Example output
 
 ```text
-🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline #19 📝 🌳 feat-api 🌿 feat/api
+🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline 📝 #19 🌳 feat-api 🌿 feat/api
 ```
 
 ## Segments
@@ -45,7 +45,7 @@ When `$COLUMNS` is unset (older Claude Code, non-terminal hosts), output stays o
 Renders when Claude Code reports `workspace.repo` (a git remote pointing at a known host):
 
   - `🐙` github.com, `🦊` gitlab.com, `🪣` bitbucket.org, `📦` other hosts (with `host/` prefix)
-  - `#N` followed by review state: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
+  - review state followed by `#N`: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
   - `🌳 worktree` — directory name of the linked worktree, shown only when `cwd` is a linked worktree (in the main clone it would just duplicate the repo name, so it is omitted)
   - `🌿 branch` — current branch read directly from `cwd/.git/HEAD`; when HEAD is detached or unreadable it falls back to the worktree name from stdin, but only if the `🌳` marker is not already shown (so the same name is never printed twice)
 
