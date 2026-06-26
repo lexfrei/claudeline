@@ -10,6 +10,13 @@ import (
 // both JoinPipe and JoinPipeWrap, which must agree on the single-line form.
 const wantPipeJoinABC = "a | b | c"
 
+// Sample labels reused across Part fixtures.
+const (
+	testPRNumber  = "#19"
+	testRepoSlug  = "lexfrei/claudeline"
+	testModelName = "Opus 4.7"
+)
+
 func TestDuration(t *testing.T) {
 	t.Parallel()
 
@@ -168,7 +175,7 @@ func TestFormatQuotaWindow(t *testing.T) {
 		RemainingMinutes: 6857,
 	}
 
-	got := FormatQuotaWindow(win, "7d", "")
+	got := FormatQuotaWindow(win, "7d")
 	if got == "" {
 		t.Error("FormatQuotaWindow returned empty string")
 	}
@@ -188,7 +195,7 @@ func TestFormatStaleQuotaWindow(t *testing.T) {
 		RemainingMinutes: 6857,
 	}
 
-	got := FormatStaleQuotaWindow(win, "7d", "")
+	got := FormatStaleQuotaWindow(win, "7d")
 	if !strings.Contains(got, "?%") {
 		t.Errorf("FormatStaleQuotaWindow should contain '?%%', got %q", got)
 	}
@@ -316,5 +323,132 @@ func TestFormatRateLimitSegment(t *testing.T) {
 				t.Errorf("FormatRateLimitSegment() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestPart(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		text  string
+		icons []string
+		want  string
+	}{
+		{"leading icon and text", testRepoSlug, []string{"🐙"}, "🐙 " + testRepoSlug},
+		{"review icon left of number", testPRNumber, []string{"📝"}, "📝 " + testPRNumber},
+		{"leading plus one sub-icon", "7d: 42% (4d 2h)", []string{"🟡", "⬆"}, "🟡 7d: 42% (4d 2h) ⬆"},
+		{"sub-icons glued without separators", testModelName, []string{"🤖", "⏫", "💭", "⚡"}, "🤖 " + testModelName + " ⏫💭⚡"},
+		{"empty sub-icons ignored", testModelName, []string{"🤖", "", ""}, "🤖 " + testModelName},
+		{"zero icons yields text only", testPRNumber, nil, testPRNumber},
+		{"single icon before count", "2", []string{"🔄"}, "🔄 2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := Part(tt.text, tt.icons...); got != tt.want {
+				t.Errorf("Part(%q, %v) = %q, want %q", tt.text, tt.icons, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPartStyledText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		text  string
+		icons []string
+		want  string
+	}{
+		{"green circle colors text", "7d: 42% (4d 2h)", []string{"🟢"}, ansiGreen + "7d: 42% (4d 2h)" + ansiReset},
+		{"yellow circle colors text", "5h: 80%", []string{"🟡"}, ansiYellow + "5h: 80%" + ansiReset},
+		{"orange circle colors text", "5h: 80%", []string{"🟠"}, ansiOrange + "5h: 80%" + ansiReset},
+		{"red circle colors text", testPRNumber, []string{"🔴"}, ansiRed + testPRNumber + ansiReset},
+		{"major diamond colors text orange", "major outage", []string{"🔶"}, ansiOrange + "major outage" + ansiReset},
+		{"warning triangle colors text yellow", "degraded", []string{"⚠️"}, ansiYellow + "degraded" + ansiReset},
+		{"non-circle leading icon dropped", testRepoSlug, []string{"🐙"}, testRepoSlug},
+		{"sub-icons dropped", testModelName, []string{"🤖", "⏫", "💭", "⚡"}, testModelName},
+		{"zero icons yields text", testPRNumber, nil, testPRNumber},
+		{"first circle wins", "x", []string{"🟢", "🔴"}, ansiGreen + "x" + ansiReset},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := PartStyled(StyleText, tt.text, tt.icons...); got != tt.want {
+				t.Errorf("PartStyled(StyleText, %q, %v) = %q, want %q", tt.text, tt.icons, got, tt.want)
+			}
+		})
+	}
+}
+
+// useTextStyle switches the package-global Style to StyleText for one test and
+// restores it after. Callers must NOT run in parallel, since Style is shared
+// process state.
+func useTextStyle(t *testing.T) {
+	t.Helper()
+
+	prev := Style
+	Style = StyleText
+
+	t.Cleanup(func() { Style = prev })
+}
+
+func TestPartUsesGlobalStyle(t *testing.T) {
+	useTextStyle(t)
+
+	want := ansiYellow + "7d: 42%" + ansiReset
+	if got := Part("7d: 42%", "🟡"); got != want {
+		t.Errorf("Part under StyleText = %q, want %q", got, want)
+	}
+}
+
+func TestContextSegmentText(t *testing.T) {
+	useTextStyle(t)
+
+	// 67% is the yellow threshold (>=50, <80); the 🧠 is dropped and the text
+	// carries the threshold color exactly once (no double wrap).
+	want := ansiYellow + "67%" + ansiReset
+	if got := ContextSegment(67); got != want {
+		t.Errorf("ContextSegment(67) text mode = %q, want %q", got, want)
+	}
+}
+
+func TestFormatQuotaWindowText(t *testing.T) {
+	useTextStyle(t)
+
+	// Low utilization with most of the window remaining -> green rate -> green
+	// text, and no circle glyph survives.
+	win := &QuotaWindow{
+		Utilization:      10,
+		ResetsAt:         time.Now().Add(3 * time.Hour),
+		TotalMinutes:     10080,
+		RemainingMinutes: 9000,
+	}
+
+	got := FormatQuotaWindow(win, "7d")
+	if !strings.HasPrefix(got, ansiGreen) || !strings.HasSuffix(got, ansiReset) {
+		t.Errorf("expected green-wrapped text, got %q", got)
+	}
+
+	if strings.ContainsAny(got, "🟢🟡🟠🔴") {
+		t.Errorf("expected no circle glyph in text mode, got %q", got)
+	}
+}
+
+func TestFormatRateLimitSegmentText(t *testing.T) {
+	useTextStyle(t)
+
+	// ⛔ is not a circle, so it is dropped to plain text.
+	got := FormatRateLimitSegment(&ExhaustedWindow{Name: "5h", Minutes: 134})
+	want := "5h limit hit (2h 14m)"
+
+	if got != want {
+		t.Errorf("FormatRateLimitSegment text mode = %q, want %q", got, want)
 	}
 }

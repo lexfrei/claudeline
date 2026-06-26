@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/cache"
+	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 )
 
@@ -24,10 +25,17 @@ var CachePath = "/tmp/claude-status-cache.json"
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
 
-var statusMap = map[string]string{
-	"minor":    "⚠️ degraded",
-	"major":    "🔶 major outage",
-	"critical": "🔴 critical outage",
+// Platform status indicators reported by the status API.
+const (
+	IndicatorMinor    = "minor"
+	IndicatorMajor    = "major"
+	IndicatorCritical = "critical"
+)
+
+var statusMap = map[string]struct{ icon, text string }{
+	IndicatorMinor:    {"⚠️", "degraded"},
+	IndicatorMajor:    {"🔶", "major outage"},
+	IndicatorCritical: {"🔴", "critical outage"},
 }
 
 type apiResponse struct {
@@ -36,10 +44,22 @@ type apiResponse struct {
 	} `json:"status"`
 }
 
+// renderStatus turns a platform status indicator into a themed segment, or ""
+// when the indicator names no active incident. Rendering happens at read time
+// (not when cached) so a theme change takes effect without waiting out the TTL.
+func renderStatus(indicator string) string {
+	entry, ok := statusMap[indicator]
+	if !ok {
+		return ""
+	}
+
+	return fmtutil.Part(entry.text, entry.icon)
+}
+
 // FetchAlert returns a status string if Claude platform has active incidents.
 func FetchAlert() string {
 	if cached, ok := cache.Read(CachePath, CacheTTL); ok {
-		return string(cached)
+		return renderStatus(string(cached))
 	}
 
 	httpResp, err := HTTPGetFn(apiURL, nil, apiTimeout)
@@ -64,8 +84,7 @@ func FetchAlert() string {
 		return ""
 	}
 
-	result := statusMap[resp.Status.Indicator]
-	cache.Write(CachePath, []byte(result))
+	cache.Write(CachePath, []byte(resp.Status.Indicator))
 
-	return result
+	return renderStatus(resp.Status.Indicator)
 }

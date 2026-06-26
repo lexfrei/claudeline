@@ -44,16 +44,92 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected credits segment enabled by default")
 	}
 
-	if !cfg.Segments.OffPeak {
-		t.Error("expected offpeak segment enabled by default")
-	}
-
 	if cfg.Cache.UsageTTL != 10*time.Minute {
 		t.Errorf("expected usage TTL 60s, got %v", cfg.Cache.UsageTTL)
 	}
 
 	if cfg.Cache.StatusTTL != 15*time.Second {
 		t.Errorf("expected status TTL 15s, got %v", cfg.Cache.StatusTTL)
+	}
+
+	if cfg.Theme != ThemeEmoji {
+		t.Errorf("expected emoji theme by default, got %q", cfg.Theme)
+	}
+}
+
+func TestNormalizeTheme(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"emoji": ThemeEmoji,
+		"":      ThemeEmoji,
+		"text":  ThemeText,
+		"bogus": "",
+		"EMOJI": "",
+	}
+
+	for in, want := range cases {
+		if got := NormalizeTheme(in); got != want {
+			t.Errorf("NormalizeTheme(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLoadTheme(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		`theme = "text"`:  ThemeText,
+		`theme = "emoji"`: ThemeEmoji,
+		`theme = "bogus"`: ThemeEmoji, // invalid falls back to emoji
+		``:                ThemeEmoji, // absent key defaults to emoji
+	}
+
+	for content, want := range cases {
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := Load(configPath).Theme; got != want {
+			t.Errorf("Load(%q).Theme = %q, want %q", content, got, want)
+		}
+	}
+}
+
+func TestValidateBadTheme(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(`theme = "bogus"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+
+	found := false
+
+	for _, p := range problems {
+		if p == `theme: unknown value "bogus" (expected emoji or text)` {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("expected theme validation error, got %v", problems)
+	}
+}
+
+func TestValidateGoodTheme(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(`theme = "text"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if problems := Validate(configPath); len(problems) != 0 {
+		t.Errorf("expected no problems for theme=text, got %v", problems)
 	}
 }
 
@@ -131,7 +207,6 @@ context = false
 compactions = false
 quota = false
 credits = false
-offpeak = false
 
 [cache]
 usage_ttl = "120s"
@@ -147,7 +222,7 @@ status_ttl = "30s"
 
 	if cfg.Segments.Model || cfg.Segments.Worktree || cfg.Segments.Cost != CostOff || cfg.Segments.Status ||
 		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota ||
-		cfg.Segments.Credits || cfg.Segments.OffPeak {
+		cfg.Segments.Credits {
 		t.Error("expected all segments disabled")
 	}
 
@@ -196,6 +271,27 @@ usage_ttl = "5m"
 	problems := Validate(configPath)
 	if len(problems) != 0 {
 		t.Errorf("expected no problems, got %v", problems)
+	}
+}
+
+func TestValidateToleratesDeprecatedOffpeak(t *testing.T) {
+	t.Parallel()
+
+	// The off-peak feature was removed, but existing configs may still carry
+	// segments.offpeak. It must remain tolerated rather than flagged as a typo.
+	content := `
+[segments]
+offpeak = true
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) != 0 {
+		t.Errorf("expected deprecated offpeak key to be tolerated, got %v", problems)
 	}
 }
 

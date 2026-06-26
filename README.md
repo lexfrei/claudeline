@@ -9,7 +9,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 ## Example output
 
 ```text
-🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline #19 📝 🌳 feat-api 🌿 feat/api
+🤖 Opus 4.7 ⏫💭 | 🧠 67% | 🔄 2 | 🟡 7d: 42% (4d 2h) | 🔴 5h: 91% (27m) | 🐙 lexfrei/claudeline 📝 #19 🌳 feat-api 🌿 feat/api
 ```
 
 ## Segments
@@ -24,13 +24,28 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
 | 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
-| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (⬆ during off-peak promotions) |
+| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset |
 
 ### Model indicators
 
   - effort `low` → `⬇️`, `medium` → no indicator, `high` → `⬆️`, `xhigh` → `⏫`, `max` → `🚀`
   - thinking enabled → `💭`
   - fast mode → `⚡`
+
+### Themes
+
+The icon style is selectable with `theme` in config or `--theme` on the CLI:
+
+  - `emoji` (default) — the rendering shown above.
+  - `text` — drops every emoji icon. Where an emoji encoded status by color (the `🟢/🟡/🟠/🔴` rate circles, the context meter, a changes-requested PR, and platform-status severity — `⚠️` minor → yellow, `🔶` major → orange, `🔴` critical → red), that color is carried onto the segment's text instead. Identifying emoji (`🤖`, `🐙`, `📝`) are removed, since the text already names the segment.
+
+Two kinds of state have no text form and are unavailable in this theme: the model's effort / thinking / fast-mode markers (`⏫`/`💭`/`⚡`) disappear entirely, and every PR review state except changes-requested (which survives as red) collapses to a plain `#N`.
+
+The same state as the example above, under `--theme text` (status shown here in **bold** to stand in for color):
+
+```text
+Opus 4.7 | **67%** | 2 | **7d: 42% (4d 2h)** | **5h: 91% (27m)** | lexfrei/claudeline #19 feat-api feat/api
+```
 
 ### Auto-wrap on narrow terminals
 
@@ -45,7 +60,7 @@ When `$COLUMNS` is unset (older Claude Code, non-terminal hosts), output stays o
 Renders when Claude Code reports `workspace.repo` (a git remote pointing at a known host):
 
   - `🐙` github.com, `🦊` gitlab.com, `🪣` bitbucket.org, `📦` other hosts (with `host/` prefix)
-  - `#N` followed by review state: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
+  - review state followed by `#N`: `📝` draft, `👀` pending, `💬` commented, `🔴` changes requested, `✅` approved
   - `🌳 worktree` — directory name of the linked worktree, shown only when `cwd` is a linked worktree (in the main clone it would just duplicate the repo name, so it is omitted)
   - `🌿 branch` — current branch read directly from `cwd/.git/HEAD`; when HEAD is detached or unreadable it falls back to the worktree name from stdin, but only if the `🌳` marker is not already shown (so the same name is never printed twice)
 
@@ -67,12 +82,6 @@ The cost segment has three modes:
 - `false` — never show
 
 Set via `--cost auto|true|false` or `cost = "auto"` in config.
-
-### Off-peak promotions
-
-During [Anthropic usage promotions](https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion), off-peak hours provide boosted 5-hour limits. claudeline shows ⬆ next to the 5h quota segment when a promotion is active and you are in an off-peak window. The 7-day limit is unaffected — only bonus usage above the normal 5h cap is excluded from weekly counting.
-
-Disable with `--no-offpeak` or `offpeak = false` in config.
 
 ## Requirements
 
@@ -137,6 +146,8 @@ Set `refreshInterval` in `~/.claude/settings.json` to also re-run the command on
 Optional config file at `~/.claudelinerc.toml`:
 
 ```toml
+theme = "emoji" # or "text"
+
 [segments]
 model = true
 effort = true
@@ -149,13 +160,12 @@ status = true
 context = true
 compactions = true
 quota = true
-offpeak = true
 
 [cache]
 status_ttl = "15s"
 ```
 
-Set any segment to `false` to hide it (`cost` accepts `"auto"`, `"true"`, `"false"`).
+Set any segment to `false` to hide it (`cost` accepts `"auto"`, `"true"`, `"false"`; `theme` accepts `"emoji"`, `"text"`).
 
 Run `claudeline validate --config ~/.claudelinerc.toml` to check your config for typos and invalid values.
 
@@ -168,7 +178,7 @@ claudeline --cost false --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
+Available flags: `--theme`, `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
 
 ## Advanced: `--mac-insecure` mode
 

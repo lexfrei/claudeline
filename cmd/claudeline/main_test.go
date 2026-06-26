@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/config"
+	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
-	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
@@ -281,27 +281,27 @@ func TestBuildStatuslineRepoSegment(t *testing.T) {
 		{
 			name:     "github repo with draft PR",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},"pr":{"number":19,"review_state":"draft"}}`,
-			expected: "🐙 lexfrei/claudeline #19 📝",
+			expected: "🐙 lexfrei/claudeline 📝 #19",
 		},
 		{
 			name:     "github repo with approved PR and branch",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"},"git_worktree":"feat-api"},"pr":{"number":42,"review_state":"approved"}}`,
-			expected: "🐙 lexfrei/claudeline #42 ✅ 🌿 feat-api",
+			expected: "🐙 lexfrei/claudeline ✅ #42 🌿 feat-api",
 		},
 		{
 			name:     "changes_requested",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"changes_requested"}}`,
-			expected: "🐙 a/b #1 🔴",
+			expected: "🐙 a/b 🔴 #1",
 		},
 		{
 			name:     "commented",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"commented"}}`,
-			expected: "🐙 a/b #1 💬",
+			expected: "🐙 a/b 💬 #1",
 		},
 		{
 			name:     "pending review",
 			input:    `{"workspace":{"repo":{"host":"github.com","owner":"a","name":"b"}},"pr":{"number":1,"review_state":"pending"}}`,
-			expected: "🐙 a/b #1 👀",
+			expected: "🐙 a/b 👀 #1",
 		},
 		{
 			name:     "PR without known review_state hides state icon",
@@ -1340,9 +1340,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -1374,10 +1374,6 @@ func TestApplyFlagOverrides(t *testing.T) {
 		t.Error("expected cost still enabled")
 	}
 
-	if cfg.Segments.OffPeak {
-		t.Error("expected offpeak disabled by flag")
-	}
-
 	if !cfg.MacInsecure {
 		t.Error("expected mac-insecure enabled by flag")
 	}
@@ -1406,98 +1402,123 @@ func TestFlagSetUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestPromoIndicator(t *testing.T) {
+// TestNoOffpeakFlagStillAccepted pins backward compatibility: the off-peak
+// feature was removed, but a statusLine.command that still passes --no-offpeak
+// must keep parsing. A parse error here would make main() exit 1 and blank the
+// whole statusline, not just drop one segment.
+func TestNoOffpeakFlagStillAccepted(t *testing.T) {
 	t.Parallel()
 
-	active := promotion.Status{
-		Active:   true,
-		FiveHour: "⬆",
-	}
-	inactive := promotion.Status{}
-
-	tests := []struct {
-		name  string
-		label string
-		promo promotion.Status
-		want  string
-	}{
-		{"5h active", "5h", active, "⬆"},
-		{"7d active", "7d", active, ""},
-		{"7d-opus active", "7d-opus", active, ""},
-		{"7d-sonnet active", "7d-sonnet", active, ""},
-		{"7d-cowork active", "7d-cowork", active, ""},
-		{"7d-oauth active", "7d-oauth", active, ""},
-		{"5h-opus hypothetical", "5h-opus", active, "⬆"},
-		{"unknown label active", "credits", active, ""},
-		{"5h inactive", "5h", inactive, ""},
-		{"7d inactive", "7d", inactive, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := promoIndicator(tt.label, tt.promo)
-			if got != tt.want {
-				t.Errorf("promoIndicator(%q) = %q, want %q", tt.label, got, tt.want)
-			}
-		})
+	cmd := newRootCmd()
+	if err := cmd.ParseFlags([]string{"--no-offpeak"}); err != nil {
+		t.Fatalf("removed flag must remain a no-op for backward compat, got %v", err)
 	}
 }
 
-func TestAppendUsageSegmentsOffPeak(t *testing.T) {
+func TestThemeFlagOverride(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCmd()
+	if err := cmd.ParseFlags([]string{"--theme", "text"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Defaults()
+	applyFlagOverrides(cmd, &cfg)
+
+	if cfg.Theme != config.ThemeText {
+		t.Errorf("expected --theme text to override config, got %q", cfg.Theme)
+	}
+}
+
+// TestApplyRuntimeConfigTheme pins the cfg.Theme -> fmtutil.Style glue, the one
+// integration point every rendering test bypasses by setting Style directly. An
+// inverted or miswired branch here would render the wrong theme in the real
+// binary while leaving all those tests green.
+func TestApplyRuntimeConfigTheme(t *testing.T) {
+	cases := map[string]fmtutil.IconStyle{
+		config.ThemeText:  fmtutil.StyleText,
+		config.ThemeEmoji: fmtutil.StyleEmoji,
+		"":                fmtutil.StyleEmoji, // unset normalizes to emoji
+		"bogus":           fmtutil.StyleEmoji, // invalid flag value falls back
+	}
+
+	prev := fmtutil.Style
+
+	t.Cleanup(func() { fmtutil.Style = prev })
+
+	for theme, want := range cases {
+		cfg := config.Defaults()
+		cfg.Theme = theme
+
+		applyRuntimeConfig(&cfg)
+
+		if fmtutil.Style != want {
+			t.Errorf("theme %q -> Style %d, want %d", theme, fmtutil.Style, want)
+		}
+	}
+}
+
+// useTextTheme switches the global icon style to text for one test, restoring
+// it after. Not parallel-safe: Style is shared process state.
+func useTextTheme(t *testing.T) {
+	t.Helper()
+
+	prev := fmtutil.Style
+	fmtutil.Style = fmtutil.StyleText
+
+	t.Cleanup(func() { fmtutil.Style = prev })
+}
+
+func TestBuildStatuslineTextThemeDropsEmoji(t *testing.T) {
 	cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	// Set NowFn to off-peak time during March 2026 promo.
-	origNow := promotion.NowFn
+	status.HTTPGetFn = failHTTP
 
-	defer func() { promotion.NowFn = origNow }()
+	useTextTheme(t)
 
-	// March 16 2026 Monday 20:00 EDT = March 17 00:00 UTC (off-peak).
-	promotion.NowFn = func() time.Time {
-		return time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC)
+	input := `{"model":{"display_name":"Opus 4.7"},"effort":{"level":"xhigh"},"thinking":{"enabled":true},` +
+		`"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},` +
+		`"pr":{"number":19,"review_state":"changes_requested"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	for _, emoji := range []string{"🤖", "⏫", "💭", "🐙", "📝", "🔴"} {
+		if strings.Contains(got, emoji) {
+			t.Errorf("text theme must drop emoji %q, got %q", emoji, got)
+		}
 	}
 
-	resetsAt := promotion.NowFn().Add(3 * time.Hour).UTC().Format(time.RFC3339)
-
-	keychain.GetFn = func() (string, error) { return testToken, nil }
-	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
-		return &httpclient.Response{
-			StatusCode: http.StatusOK,
-			Body: []byte(`{
-				"five_hour": {"utilization": 30, "resets_at": "` + resetsAt + `"},
-				"seven_day": {"utilization": 45, "resets_at": "` + resetsAt + `"}
-			}`),
-		}, nil
+	for _, want := range []string{"Opus 4.7", "lexfrei/claudeline"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in %q", want, got)
+		}
 	}
 
-	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
-	joined := strings.Join(segments, " | ")
+	// changes_requested carries a 🔴 circle, so its #19 is colored red.
+	if !strings.Contains(got, "\x1b[31m#19\x1b[0m") {
+		t.Errorf("expected red-wrapped #19 for changes_requested, got %q", got)
+	}
+}
 
-	if !strings.Contains(joined, "⬆") {
-		t.Errorf("expected up-arrow indicator for 5h off-peak, got %q", joined)
+func TestBuildStatuslineTextThemePlainNumber(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	useTextTheme(t)
+
+	// draft carries 📝 (not a circle), so #19 stays plain text, no color.
+	input := `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},` +
+		`"pr":{"number":19,"review_state":"draft"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if strings.Contains(got, "📝") || strings.Contains(got, "\x1b[") {
+		t.Errorf("expected plain uncolored #19 for draft, got %q", got)
 	}
 
-	// 7d should NOT have any off-peak indicator (7d still counts during off-peak).
-	if strings.Contains(joined, "⏸") {
-		t.Errorf("7d should not have pause indicator, got %q", joined)
-	}
-
-	// Verify indicator position: should be immediately after rate circle emoji.
-	if !strings.Contains(joined, "🟢⬆") && !strings.Contains(joined, "🟡⬆") &&
-		!strings.Contains(joined, "🟠⬆") && !strings.Contains(joined, "🔴⬆") {
-		t.Errorf("expected up-arrow immediately after rate circle for 5h, got %q", joined)
-	}
-
-	// Verify indicators are absent when offpeak is disabled.
-	cfg := insecureCfg()
-	cfg.Segments.OffPeak = false
-
-	segmentsDisabled := appendUsageSegments(nil, &stdinData{}, cfg)
-	joinedDisabled := strings.Join(segmentsDisabled, " | ")
-
-	if strings.Contains(joinedDisabled, "⬆") {
-		t.Errorf("expected no off-peak indicators when disabled, got %q", joinedDisabled)
+	if !strings.Contains(got, "#19") {
+		t.Errorf("expected #19 in %q", got)
 	}
 }

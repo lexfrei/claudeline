@@ -13,6 +13,9 @@ const (
 	ansiYellow = "\033[33m"
 	ansiRed    = "\033[31m"
 	ansiReset  = "\033[0m"
+	// ansiOrange is a 256-color escape (no orange in the basic 8). The
+	// VisualWidth strip regex matches it, so it stays width-safe.
+	ansiOrange = "\033[38;5;208m"
 
 	minutesPerDay  = 1440
 	minutesPerHour = 60
@@ -90,7 +93,7 @@ func ContextSegment(pct float64) string {
 		color = ansiGreen
 	}
 
-	return fmt.Sprintf("%s🧠 %d%%%s", color, rounded, ansiReset)
+	return color + Part(fmt.Sprintf("%d%%", rounded), "🧠") + ansiReset
 }
 
 // ParseISOUTC parses an ISO-8601 timestamp to UTC time.
@@ -117,6 +120,78 @@ func ParseISOUTC(raw string) (time.Time, error) {
 // JoinPipe joins string segments with " | " separator.
 func JoinPipe(parts []string) string {
 	return strings.Join(parts, " | ")
+}
+
+// IconStyle selects how Part renders the icons attached to a part.
+type IconStyle int
+
+const (
+	// StyleEmoji is the historical rendering: icons are shown as emoji glyphs
+	// around the text. Output is byte-for-byte identical to pre-theme releases.
+	StyleEmoji IconStyle = iota
+	// StyleText drops every emoji icon. When one of the icons is a status glyph
+	// (a rate circle 🟢🟡🟠🔴 or a severity marker 🔶/⚠️) its color is carried onto
+	// the text instead, so rate and severity survive as color rather than a glyph.
+	StyleText
+)
+
+// Style is the process-global icon style, set once at startup before any
+// segment is built. It defaults to StyleEmoji so untouched code and every
+// existing test keep their historical output.
+var Style = StyleEmoji
+
+// statusColor maps a status glyph to the ANSI color it stands for. Used only in
+// StyleText: the glyph is dropped and its color wraps the part's text. Covers
+// the rate circles and the platform-severity markers so all severity levels —
+// yellow (minor), orange (major) and red (critical) — survive as text color.
+var statusColor = map[string]string{
+	"🟢":  ansiGreen,
+	"🟡":  ansiYellow,
+	"🟠":  ansiOrange,
+	"🔴":  ansiRed,
+	"🔶":  ansiOrange,
+	"⚠️": ansiYellow,
+}
+
+// Part renders a statusline part from its text and zero or more icons under the
+// process-global Style. The first icon (when present and non-empty) is the
+// leading icon, placed to the left of the text; any further icons are
+// qualifiers glued to the right without separators. Zero icons is valid and
+// yields just the text — the case a no-emoji theme relies on.
+func Part(text string, icons ...string) string {
+	return PartStyled(Style, text, icons...)
+}
+
+// PartStyled renders a part under an explicit style. It is the pure core behind
+// Part, kept separate so tests can exercise both styles without mutating the
+// Style global.
+func PartStyled(style IconStyle, text string, icons ...string) string {
+	if style == StyleText {
+		for _, icon := range icons {
+			if color, ok := statusColor[icon]; ok {
+				return color + text + ansiReset
+			}
+		}
+
+		return text
+	}
+
+	var lead, sub string
+	if len(icons) > 0 {
+		lead = icons[0]
+		sub = strings.Join(icons[1:], "")
+	}
+
+	out := text
+	if lead != "" {
+		out = lead + " " + text
+	}
+
+	if sub != "" {
+		out += " " + sub
+	}
+
+	return out
 }
 
 // Quota window constants.
@@ -159,36 +234,34 @@ type Data struct {
 }
 
 // FormatStaleQuotaWindow formats a window with ?% but real time and indicator.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: ?% (3h)").
-func FormatStaleQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
+func FormatStaleQuotaWindow(win *QuotaWindow, label string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s%s %s: ?%% (%s)", indicator, promoIndicator, label, dur)
+	return Part(fmt.Sprintf("%s: ?%% (%s)", label, dur), indicator)
 }
 
 // FormatQuotaWindow formats a single quota window for display.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: 12% (4h 30m)").
-func FormatQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
+func FormatQuotaWindow(win *QuotaWindow, label string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s%s %s: %d%% (%s)", indicator, promoIndicator, label, pct, dur)
+	return Part(fmt.Sprintf("%s: %d%% (%s)", label, pct, dur), indicator)
 }
 
 // FormatRateLimitSegment formats the explicit exhausted-limit segment.
 func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
 	if exhausted == nil {
-		return "⛔ limit hit"
+		return Part("limit hit", "⛔")
 	}
 
 	if exhausted.Minutes <= 0 {
-		return fmt.Sprintf("⛔ %s limit hit", exhausted.Name)
+		return Part(exhausted.Name+" limit hit", "⛔")
 	}
 
-	return fmt.Sprintf("⛔ %s limit hit (%s)", exhausted.Name, Duration(exhausted.Minutes))
+	return Part(fmt.Sprintf("%s limit hit (%s)", exhausted.Name, Duration(exhausted.Minutes)), "⛔")
 }
 
 // FindExhaustedWindow returns the most saturated active window that is exhausted.

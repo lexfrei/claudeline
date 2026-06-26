@@ -17,7 +17,6 @@ import (
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/gitinfo"
-	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
@@ -104,7 +103,7 @@ func newRootCmd() *cobra.Command {
 		Run: func(_ *cobra.Command, _ []string) {
 			raw, err := io.ReadAll(os.Stdin)
 			if err != nil {
-				fmt.Println("⚠️ stdin error")
+				fmt.Println(fmtutil.Part("stdin error", "⚠️"))
 
 				return
 			}
@@ -117,12 +116,7 @@ func newRootCmd() *cobra.Command {
 		cfg = config.Load(configPath)
 
 		applyFlagOverrides(rootCmd, &cfg)
-
-		status.CacheTTL = cfg.Cache.StatusTTL
-
-		if cfg.MacInsecure {
-			usage.CacheTTL = cfg.Cache.UsageTTL
-		}
+		applyRuntimeConfig(&cfg)
 	}
 
 	rootCmd.SetVersionTemplate("claudeline {{.Version}}\n")
@@ -143,7 +137,13 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("mac-insecure", false, "use macOS Keychain + Anthropic API for per-model quotas and credits")
 	flags.Bool("per-model-quota", false, "enable per-model quota segments (requires --mac-insecure)")
 	flags.Bool("no-credits", false, "disable credits segment (only with --mac-insecure)")
-	flags.Bool("no-offpeak", false, "disable off-peak promotion indicators")
+	flags.String("theme", "", "icon theme: emoji (default) or text")
+
+	// Deprecated no-op: the off-peak promotion feature was removed. The flag is
+	// kept (hidden) so existing statusLine.command invocations carrying
+	// --no-offpeak keep parsing instead of failing and blanking the statusline.
+	flags.Bool("no-offpeak", false, "deprecated no-op: off-peak indicators were removed")
+	_ = flags.MarkHidden("no-offpeak")
 
 	rootCmd.AddCommand(newValidateCmd(&configPath))
 
@@ -176,6 +176,32 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	applyIdentityFlags(cmd, cfg)
 	applyDisplayFlags(cmd, cfg)
 	applyUsageFlags(cmd, cfg)
+}
+
+// applyRuntimeConfig pushes resolved config values into the package globals
+// that rendering and fetching read at request time. It finalizes the theme:
+// config.Load already warned for a bad config-file value, so an invalid theme
+// reaching here can only come from a --theme flag (overrides run after Load) —
+// warn once and fall back to emoji, matching the config-file behavior.
+func applyRuntimeConfig(cfg *config.Config) {
+	status.CacheTTL = cfg.Cache.StatusTTL
+
+	theme := config.NormalizeTheme(cfg.Theme)
+	if theme == "" {
+		fmt.Fprintf(os.Stderr, "claudeline: invalid theme %q, using emoji\n", cfg.Theme)
+
+		theme = config.ThemeEmoji
+	}
+
+	if theme == config.ThemeText {
+		fmtutil.Style = fmtutil.StyleText
+	} else {
+		fmtutil.Style = fmtutil.StyleEmoji
+	}
+
+	if cfg.MacInsecure {
+		usage.CacheTTL = cfg.Cache.UsageTTL
+	}
 }
 
 func applyIdentityFlags(cmd *cobra.Command, cfg *config.Config) {
@@ -211,6 +237,12 @@ func applyDisplayFlags(cmd *cobra.Command, cfg *config.Config) {
 		}
 	}
 
+	if flagSet(cmd, "theme") {
+		if val, _ := cmd.PersistentFlags().GetString("theme"); val != "" {
+			cfg.Theme = val
+		}
+	}
+
 	if flagSet(cmd, "no-status") {
 		cfg.Segments.Status = false
 	}
@@ -239,10 +271,6 @@ func applyUsageFlags(cmd *cobra.Command, cfg *config.Config) {
 
 	if flagSet(cmd, "no-credits") {
 		cfg.Segments.Credits = false
-	}
-
-	if flagSet(cmd, "no-offpeak") {
-		cfg.Segments.OffPeak = false
 	}
 }
 
@@ -342,14 +370,14 @@ func worktreeBranchParts(data *stdinData) []string {
 	var parts []string
 
 	if worktree != "" {
-		parts = append(parts, "🌳 "+worktree)
+		parts = append(parts, fmtutil.Part(worktree, "🌳"))
 	}
 
 	switch {
 	case branch != "" && branch != worktree:
-		parts = append(parts, "🌿 "+branch)
+		parts = append(parts, fmtutil.Part(branch, "🌿"))
 	case branch == "" && worktree == "" && data.Workspace.GitWorktree != "":
-		parts = append(parts, "🌿 "+data.Workspace.GitWorktree)
+		parts = append(parts, fmtutil.Part(data.Workspace.GitWorktree, "🌿"))
 	}
 
 	return parts
@@ -366,7 +394,7 @@ func resolveCwd(data *stdinData) string {
 
 // formatRepoSegment builds the combined repo segment:
 //
-//	🐙 owner/repo [#N <state>] [🌳 worktree] [🌿 branch]
+//	🐙 owner/repo [<state> #N] [🌳 worktree] [🌿 branch]
 //
 // Host icon varies by `workspace.repo.host`; unknown hosts surface as
 // "📦 host/owner/repo" so the source is still legible. The 🌳 worktree marker
@@ -375,15 +403,15 @@ func formatRepoSegment(data *stdinData) string {
 	repo := data.Workspace.Repo
 	icon, prefix := repoHostIcon(repo.Host)
 
-	parts := []string{icon + " " + prefix + repo.Owner + "/" + repo.Name}
+	parts := []string{fmtutil.Part(prefix+repo.Owner+"/"+repo.Name, icon)}
 
 	if data.PR != nil && data.PR.Number > 0 {
-		prPart := fmt.Sprintf("#%d", data.PR.Number)
+		number := fmt.Sprintf("#%d", data.PR.Number)
 		if state := prReviewIcon(data.PR.ReviewState); state != "" {
-			prPart += " " + state
+			parts = append(parts, fmtutil.Part(number, state))
+		} else {
+			parts = append(parts, number)
 		}
-
-		parts = append(parts, prPart)
 	}
 
 	parts = append(parts, worktreeBranchParts(data)...)
@@ -434,36 +462,32 @@ func appendIdentitySegments(segments []string, data *stdinData, cfg *config.Conf
 			model = data.Model.DisplayName
 		}
 
-		if suffix := formatModelSuffix(data, cfg); suffix != "" {
-			model += " " + suffix
-		}
-
-		segments = append(segments, "🤖 "+model)
+		segments = append(segments, fmtutil.Part(model, append([]string{"🤖"}, modelSubIcons(data, cfg)...)...))
 	}
 
 	return segments
 }
 
-// formatModelSuffix builds the indicator suffix appended to the model name.
-// Combines effort level, thinking, and fast-mode flags into a single string.
-func formatModelSuffix(data *stdinData, cfg *config.Config) string {
-	var parts []string
+// modelSubIcons returns the qualifier icons shown to the right of the model
+// name: effort level, thinking, and fast-mode. Empty when none apply.
+func modelSubIcons(data *stdinData, cfg *config.Config) []string {
+	var icons []string
 
 	if cfg.Segments.Effort {
 		if e := effortIndicator(data.Effort.Level); e != "" {
-			parts = append(parts, e)
+			icons = append(icons, e)
 		}
 	}
 
 	if cfg.Segments.Thinking && data.Thinking.Enabled {
-		parts = append(parts, "💭")
+		icons = append(icons, "💭")
 	}
 
 	if cfg.Segments.FastMode && data.FastMode {
-		parts = append(parts, "⚡")
+		icons = append(icons, "⚡")
 	}
 
-	return strings.Join(parts, "")
+	return icons
 }
 
 func effortIndicator(level string) string {
@@ -484,7 +508,7 @@ func effortIndicator(level string) string {
 // appendCostAndStatusSegments adds cost and platform status segments.
 func appendCostAndStatusSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if shouldShowCost(cfg.Segments.Cost, data.RateLimits.FiveHour != nil || data.RateLimits.SevenDay != nil) {
-		segments = append(segments, fmt.Sprintf("💰 $%.2f", data.Cost.TotalCostUSD))
+		segments = append(segments, fmtutil.Part(fmt.Sprintf("$%.2f", data.Cost.TotalCostUSD), "💰"))
 	}
 
 	if cfg.Segments.Status {
@@ -504,7 +528,7 @@ func appendContextSegments(segments []string, data *stdinData, cfg *config.Confi
 
 	if cfg.Segments.Compactions {
 		if compactions := compaction.CountCompactions(data.TranscriptPath); compactions > 0 {
-			segments = append(segments, fmt.Sprintf("🔄 %d", compactions))
+			segments = append(segments, fmtutil.Part(strconv.Itoa(compactions), "🔄"))
 		}
 	}
 
@@ -549,7 +573,7 @@ func buildQuotaFromStdin(data *stdinData) *fmtutil.Data {
 	}
 }
 
-func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, promo promotion.Status) []string {
+func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool) []string {
 	type labeledWindow struct {
 		win   *fmtutil.QuotaWindow
 		label string
@@ -571,7 +595,7 @@ func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, pr
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label))
 		}
 	}
 
@@ -579,35 +603,30 @@ func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, pr
 }
 
 func appendUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
-	var promo promotion.Status
-	if cfg.Segments.OffPeak {
-		promo = promotion.Current()
-	}
-
 	if cfg.MacInsecure {
-		return appendInsecureUsageSegments(segments, cfg, promo)
+		return appendInsecureUsageSegments(segments, cfg)
 	}
 
-	return appendStdinUsageSegments(segments, data, cfg, promo)
+	return appendStdinUsageSegments(segments, data, cfg)
 }
 
 // appendStdinUsageSegments builds quota segments from stdin rate_limits (default, secure path).
-func appendStdinUsageSegments(segments []string, data *stdinData, cfg *config.Config, promo promotion.Status) []string {
+func appendStdinUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	quotaData := buildQuotaFromStdin(data)
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, quotaData, false, promo)
+		segments = appendQuotaWindows(segments, quotaData, false)
 	}
 
 	return segments
 }
 
 // appendInsecureUsageSegments builds quota segments from Anthropic API via macOS Keychain (--mac-insecure).
-func appendInsecureUsageSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
+func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string {
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
-			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
+			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
 		}
 
 		return segments
@@ -617,27 +636,27 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config, promo pr
 	case "":
 		// no error, continue
 	case "rate_limit_error":
-		return appendRateLimitSegments(segments, cfg, promo)
+		return appendRateLimitSegments(segments, cfg)
 	default:
-		return append(segments, "⚠️ /login needed")
+		return append(segments, fmtutil.Part("/login needed", "⚠️"))
 	}
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota, promo)
+		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota)
 	}
 
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
-		segments = append(segments, fmt.Sprintf("💳 $%.0f/$%.0f",
-			usageData.Extra.UsedCredits, usageData.Extra.MonthlyLimit))
+		segments = append(segments, fmtutil.Part(fmt.Sprintf("$%.0f/$%.0f",
+			usageData.Extra.UsedCredits, usageData.Extra.MonthlyLimit), "💳"))
 	}
 
 	return segments
 }
 
-func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.Status) []string {
+func appendStaleQuotaSegments(segments []string, perModel bool) []string {
 	lastGood := usage.FetchLastGood()
 	if lastGood == nil {
-		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+		return append(segments, fmtutil.Part("7d: ?% (?d)", "⏳"), fmtutil.Part("5h: ?% (?h)", "⏳"))
 	}
 
 	type labeledWindow struct {
@@ -661,35 +680,20 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label))
 		}
 	}
 
 	return segments
 }
 
-func appendRateLimitSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
+func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
 	lastGood := usage.FetchLastGood()
 	segments = append(segments, fmtutil.FormatRateLimitSegment(fmtutil.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
 
 	if cfg.Segments.Quota {
-		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
+		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
 	}
 
 	return segments
-}
-
-func promoIndicator(label string, promo promotion.Status) string {
-	if !promo.Active {
-		return ""
-	}
-
-	switch {
-	case label == "5h" || strings.HasPrefix(label, "5h-"):
-		return promo.FiveHour
-	case label == "7d" || strings.HasPrefix(label, "7d-"):
-		return promo.SevenDay
-	default:
-		return ""
-	}
 }
