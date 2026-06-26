@@ -103,7 +103,7 @@ func newRootCmd() *cobra.Command {
 		Run: func(_ *cobra.Command, _ []string) {
 			raw, err := io.ReadAll(os.Stdin)
 			if err != nil {
-				fmt.Println("⚠️ stdin error")
+				fmt.Println(fmtutil.Part("stdin error", "⚠️"))
 
 				return
 			}
@@ -610,7 +610,7 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string
 	case "rate_limit_error":
 		return appendRateLimitSegments(segments, cfg)
 	default:
-		return append(segments, "⚠️ /login needed")
+		return append(segments, fmtutil.Part("/login needed", "⚠️"))
 	}
 
 	if cfg.Segments.Quota {
@@ -628,7 +628,7 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string
 func appendStaleQuotaSegments(segments []string, perModel bool) []string {
 	lastGood := usage.FetchLastGood()
 	if lastGood == nil {
-		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
+		return append(segments, fmtutil.Part("7d: ?% (?d)", "⏳"), fmtutil.Part("5h: ?% (?h)", "⏳"))
 	}
 
 	type labeledWindow struct {

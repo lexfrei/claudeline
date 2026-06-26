@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/config"
+	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
 	"github.com/lexfrei/claudeline/internal/status"
@@ -1411,5 +1412,69 @@ func TestNoOffpeakFlagStillAccepted(t *testing.T) {
 	cmd := newRootCmd()
 	if err := cmd.ParseFlags([]string{"--no-offpeak"}); err != nil {
 		t.Fatalf("removed flag must remain a no-op for backward compat, got %v", err)
+	}
+}
+
+// useTextTheme switches the global icon style to text for one test, restoring
+// it after. Not parallel-safe: Style is shared process state.
+func useTextTheme(t *testing.T) {
+	t.Helper()
+
+	prev := fmtutil.Style
+	fmtutil.Style = fmtutil.StyleText
+
+	t.Cleanup(func() { fmtutil.Style = prev })
+}
+
+func TestBuildStatuslineTextThemeDropsEmoji(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	useTextTheme(t)
+
+	input := `{"model":{"display_name":"Opus 4.7"},"effort":{"level":"xhigh"},"thinking":{"enabled":true},` +
+		`"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},` +
+		`"pr":{"number":19,"review_state":"changes_requested"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	for _, emoji := range []string{"🤖", "⏫", "💭", "🐙", "📝", "🔴"} {
+		if strings.Contains(got, emoji) {
+			t.Errorf("text theme must drop emoji %q, got %q", emoji, got)
+		}
+	}
+
+	for _, want := range []string{"Opus 4.7", "lexfrei/claudeline"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in %q", want, got)
+		}
+	}
+
+	// changes_requested carries a 🔴 circle, so its #19 is colored red.
+	if !strings.Contains(got, "\x1b[31m#19\x1b[0m") {
+		t.Errorf("expected red-wrapped #19 for changes_requested, got %q", got)
+	}
+}
+
+func TestBuildStatuslineTextThemePlainNumber(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	status.HTTPGetFn = failHTTP
+
+	useTextTheme(t)
+
+	// draft carries 📝 (not a circle), so #19 stays plain text, no color.
+	input := `{"workspace":{"repo":{"host":"github.com","owner":"lexfrei","name":"claudeline"}},` +
+		`"pr":{"number":19,"review_state":"draft"}}`
+	got := buildStatusline([]byte(input), defaultCfg())
+
+	if strings.Contains(got, "📝") || strings.Contains(got, "\x1b[") {
+		t.Errorf("expected plain uncolored #19 for draft, got %q", got)
+	}
+
+	if !strings.Contains(got, "#19") {
+		t.Errorf("expected #19 in %q", got)
 	}
 }

@@ -13,6 +13,9 @@ const (
 	ansiYellow = "\033[33m"
 	ansiRed    = "\033[31m"
 	ansiReset  = "\033[0m"
+	// ansiOrange is a 256-color escape (no orange in the basic 8). The
+	// VisualWidth strip regex matches it, so it stays width-safe.
+	ansiOrange = "\033[38;5;208m"
 
 	minutesPerDay  = 1440
 	minutesPerHour = 60
@@ -119,13 +122,56 @@ func JoinPipe(parts []string) string {
 	return strings.Join(parts, " | ")
 }
 
-// Part renders a statusline part from its text and zero or more icons. The
-// first icon (when present and non-empty) is the leading icon, placed to the
-// left of the text; any further icons are qualifiers of the entity (e.g. the
-// model's effort/thinking/fast-mode markers) and are glued to the right without
-// separators: "icon text subicons". Zero icons is valid and yields just the
-// text — the case a no-emoji theme relies on.
+// IconStyle selects how Part renders the icons attached to a part.
+type IconStyle int
+
+const (
+	// StyleEmoji is the historical rendering: icons are shown as emoji glyphs
+	// around the text. Output is byte-for-byte identical to pre-theme releases.
+	StyleEmoji IconStyle = iota
+	// StyleText drops every emoji icon. When one of the icons is a status circle
+	// (🟢🟡🟠🔴) the circle's color is carried onto the text instead, so rate and
+	// severity survive as color rather than a glyph.
+	StyleText
+)
+
+// Style is the process-global icon style, set once at startup before any
+// segment is built. It defaults to StyleEmoji so untouched code and every
+// existing test keep their historical output.
+var Style = StyleEmoji
+
+// circleColor maps a status-circle glyph to the ANSI color it stands for. Used
+// only in StyleText: the circle is dropped and its color wraps the part's text.
+var circleColor = map[string]string{
+	"🟢": ansiGreen,
+	"🟡": ansiYellow,
+	"🟠": ansiOrange,
+	"🔴": ansiRed,
+}
+
+// Part renders a statusline part from its text and zero or more icons under the
+// process-global Style. The first icon (when present and non-empty) is the
+// leading icon, placed to the left of the text; any further icons are
+// qualifiers glued to the right without separators. Zero icons is valid and
+// yields just the text — the case a no-emoji theme relies on.
 func Part(text string, icons ...string) string {
+	return PartStyled(Style, text, icons...)
+}
+
+// PartStyled renders a part under an explicit style. It is the pure core behind
+// Part, kept separate so tests can exercise both styles without mutating the
+// Style global.
+func PartStyled(style IconStyle, text string, icons ...string) string {
+	if style == StyleText {
+		for _, icon := range icons {
+			if color, ok := circleColor[icon]; ok {
+				return color + text + ansiReset
+			}
+		}
+
+		return text
+	}
+
 	var lead, sub string
 	if len(icons) > 0 {
 		lead = icons[0]
