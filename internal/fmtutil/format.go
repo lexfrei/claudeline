@@ -129,9 +129,9 @@ const (
 	// StyleEmoji is the historical rendering: icons are shown as emoji glyphs
 	// around the text. Output is byte-for-byte identical to pre-theme releases.
 	StyleEmoji IconStyle = iota
-	// StyleText drops every emoji icon. When one of the icons is a status circle
-	// (🟢🟡🟠🔴) the circle's color is carried onto the text instead, so rate and
-	// severity survive as color rather than a glyph.
+	// StyleText drops every emoji icon. When one of the icons is a status glyph
+	// (a rate circle 🟢🟡🟠🔴 or a severity marker 🔶/⚠️) its color is carried onto
+	// the text instead, so rate and severity survive as color rather than a glyph.
 	StyleText
 )
 
@@ -140,13 +140,17 @@ const (
 // existing test keep their historical output.
 var Style = StyleEmoji
 
-// circleColor maps a status-circle glyph to the ANSI color it stands for. Used
-// only in StyleText: the circle is dropped and its color wraps the part's text.
-var circleColor = map[string]string{
-	"🟢": ansiGreen,
-	"🟡": ansiYellow,
-	"🟠": ansiOrange,
-	"🔴": ansiRed,
+// statusColor maps a status glyph to the ANSI color it stands for. Used only in
+// StyleText: the glyph is dropped and its color wraps the part's text. Covers
+// the rate circles and the platform-severity markers so all severity levels —
+// yellow (minor), orange (major) and red (critical) — survive as text color.
+var statusColor = map[string]string{
+	"🟢":  ansiGreen,
+	"🟡":  ansiYellow,
+	"🟠":  ansiOrange,
+	"🔴":  ansiRed,
+	"🔶":  ansiOrange,
+	"⚠️": ansiYellow,
 }
 
 // Part renders a statusline part from its text and zero or more icons under the
@@ -164,7 +168,7 @@ func Part(text string, icons ...string) string {
 func PartStyled(style IconStyle, text string, icons ...string) string {
 	if style == StyleText {
 		for _, icon := range icons {
-			if color, ok := circleColor[icon]; ok {
+			if color, ok := statusColor[icon]; ok {
 				return color + text + ansiReset
 			}
 		}

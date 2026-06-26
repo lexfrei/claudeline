@@ -86,10 +86,12 @@ func TestFetchAlertTextTheme(t *testing.T) {
 
 	useTextStyle(t)
 
+	// In text mode each severity carries its color: critical red, major orange,
+	// minor yellow — derived through PartStyled so the test tracks the map.
 	cases := map[string]string{
 		IndicatorCritical: fmtutil.PartStyled(fmtutil.StyleText, "critical outage", "🔴"),
-		IndicatorMajor:    "major outage",
-		IndicatorMinor:    "degraded",
+		IndicatorMajor:    fmtutil.PartStyled(fmtutil.StyleText, "major outage", "🔶"),
+		IndicatorMinor:    fmtutil.PartStyled(fmtutil.StyleText, "degraded", "⚠️"),
 	}
 
 	for indicator, want := range cases {

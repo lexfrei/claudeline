@@ -37,7 +37,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 The icon style is selectable with `theme` in config or `--theme` on the CLI:
 
   - `emoji` (default) — the rendering shown above.
-  - `text` — drops every emoji icon. Where an emoji encoded status by color (the `🟢/🟡/🟠/🔴` rate circles, the context meter, a changes-requested PR, a critical platform status), that color is carried onto the segment's text instead. Identifying emoji (`🤖`, `🐙`, `📝`) are removed, since the text already names the segment.
+  - `text` — drops every emoji icon. Where an emoji encoded status by color (the `🟢/🟡/🟠/🔴` rate circles, the context meter, a changes-requested PR, and platform-status severity — `⚠️` minor → yellow, `🔶` major → orange, `🔴` critical → red), that color is carried onto the segment's text instead. Identifying emoji (`🤖`, `🐙`, `📝`) are removed, since the text already names the segment.
 
 Two kinds of state have no text form and are unavailable in this theme: the model's effort / thinking / fast-mode markers (`⏫`/`💭`/`⚡`) disappear entirely, and every PR review state except changes-requested (which survives as red) collapses to a plain `#N`.
 

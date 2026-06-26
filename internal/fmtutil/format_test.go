@@ -368,6 +368,8 @@ func TestPartStyledText(t *testing.T) {
 		{"yellow circle colors text", "5h: 80%", []string{"🟡"}, ansiYellow + "5h: 80%" + ansiReset},
 		{"orange circle colors text", "5h: 80%", []string{"🟠"}, ansiOrange + "5h: 80%" + ansiReset},
 		{"red circle colors text", testPRNumber, []string{"🔴"}, ansiRed + testPRNumber + ansiReset},
+		{"major diamond colors text orange", "major outage", []string{"🔶"}, ansiOrange + "major outage" + ansiReset},
+		{"warning triangle colors text yellow", "degraded", []string{"⚠️"}, ansiYellow + "degraded" + ansiReset},
 		{"non-circle leading icon dropped", testRepoSlug, []string{"🐙"}, testRepoSlug},
 		{"sub-icons dropped", testModelName, []string{"🤖", "⏫", "💭", "⚡"}, testModelName},
 		{"zero icons yields text", testPRNumber, nil, testPRNumber},
