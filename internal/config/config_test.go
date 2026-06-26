@@ -51,6 +51,86 @@ func TestDefaults(t *testing.T) {
 	if cfg.Cache.StatusTTL != 15*time.Second {
 		t.Errorf("expected status TTL 15s, got %v", cfg.Cache.StatusTTL)
 	}
+
+	if cfg.Theme != ThemeEmoji {
+		t.Errorf("expected emoji theme by default, got %q", cfg.Theme)
+	}
+}
+
+func TestNormalizeTheme(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"emoji": ThemeEmoji,
+		"":      ThemeEmoji,
+		"text":  ThemeText,
+		"bogus": "",
+		"EMOJI": "",
+	}
+
+	for in, want := range cases {
+		if got := NormalizeTheme(in); got != want {
+			t.Errorf("NormalizeTheme(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLoadTheme(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		`theme = "text"`:  ThemeText,
+		`theme = "emoji"`: ThemeEmoji,
+		`theme = "bogus"`: ThemeEmoji, // invalid falls back to emoji
+		``:                ThemeEmoji, // absent key defaults to emoji
+	}
+
+	for content, want := range cases {
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := Load(configPath).Theme; got != want {
+			t.Errorf("Load(%q).Theme = %q, want %q", content, got, want)
+		}
+	}
+}
+
+func TestValidateBadTheme(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(`theme = "bogus"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+
+	found := false
+
+	for _, p := range problems {
+		if p == `theme: unknown value "bogus" (expected emoji or text)` {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("expected theme validation error, got %v", problems)
+	}
+}
+
+func TestValidateGoodTheme(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(`theme = "text"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if problems := Validate(configPath); len(problems) != 0 {
+		t.Errorf("expected no problems for theme=text, got %v", problems)
+	}
 }
 
 func TestLoadMissingFile(t *testing.T) {

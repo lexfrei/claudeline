@@ -116,12 +116,7 @@ func newRootCmd() *cobra.Command {
 		cfg = config.Load(configPath)
 
 		applyFlagOverrides(rootCmd, &cfg)
-
-		status.CacheTTL = cfg.Cache.StatusTTL
-
-		if cfg.MacInsecure {
-			usage.CacheTTL = cfg.Cache.UsageTTL
-		}
+		applyRuntimeConfig(&cfg)
 	}
 
 	rootCmd.SetVersionTemplate("claudeline {{.Version}}\n")
@@ -142,6 +137,7 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("mac-insecure", false, "use macOS Keychain + Anthropic API for per-model quotas and credits")
 	flags.Bool("per-model-quota", false, "enable per-model quota segments (requires --mac-insecure)")
 	flags.Bool("no-credits", false, "disable credits segment (only with --mac-insecure)")
+	flags.String("theme", "", "icon theme: emoji (default) or text")
 
 	// Deprecated no-op: the off-peak promotion feature was removed. The flag is
 	// kept (hidden) so existing statusLine.command invocations carrying
@@ -182,6 +178,32 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	applyUsageFlags(cmd, cfg)
 }
 
+// applyRuntimeConfig pushes resolved config values into the package globals
+// that rendering and fetching read at request time. It finalizes the theme:
+// config.Load already warned for a bad config-file value, so an invalid theme
+// reaching here can only come from a --theme flag (overrides run after Load) —
+// warn once and fall back to emoji, matching the config-file behavior.
+func applyRuntimeConfig(cfg *config.Config) {
+	status.CacheTTL = cfg.Cache.StatusTTL
+
+	theme := config.NormalizeTheme(cfg.Theme)
+	if theme == "" {
+		fmt.Fprintf(os.Stderr, "claudeline: invalid theme %q, using emoji\n", cfg.Theme)
+
+		theme = config.ThemeEmoji
+	}
+
+	if theme == config.ThemeText {
+		fmtutil.Style = fmtutil.StyleText
+	} else {
+		fmtutil.Style = fmtutil.StyleEmoji
+	}
+
+	if cfg.MacInsecure {
+		usage.CacheTTL = cfg.Cache.UsageTTL
+	}
+}
+
 func applyIdentityFlags(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "no-model") {
 		cfg.Segments.Model = false
@@ -212,6 +234,12 @@ func applyDisplayFlags(cmd *cobra.Command, cfg *config.Config) {
 	if flagSet(cmd, "cost") {
 		if val, _ := cmd.PersistentFlags().GetString("cost"); val != "" {
 			cfg.Segments.Cost = val
+		}
+	}
+
+	if flagSet(cmd, "theme") {
+		if val, _ := cmd.PersistentFlags().GetString("theme"); val != "" {
+			cfg.Theme = val
 		}
 	}
 

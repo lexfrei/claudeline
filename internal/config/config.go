@@ -36,6 +36,25 @@ func NormalizeCostMode(raw string) string {
 	}
 }
 
+// Theme values selecting the statusline icon style.
+const (
+	ThemeEmoji = "emoji"
+	ThemeText  = "text"
+)
+
+// NormalizeTheme converts user input to a canonical theme. An empty value means
+// the default ("emoji"). Returns "" for unknown values so callers can warn.
+func NormalizeTheme(raw string) string {
+	switch raw {
+	case ThemeEmoji, "":
+		return ThemeEmoji
+	case ThemeText:
+		return ThemeText
+	default:
+		return ""
+	}
+}
+
 // Segments controls which statusline segments are displayed.
 type Segments struct {
 	Model         bool   `mapstructure:"model"`
@@ -64,6 +83,9 @@ type Config struct {
 	Segments    Segments `mapstructure:"segments"`
 	Cache       Cache    `mapstructure:"cache"`
 	MacInsecure bool     `mapstructure:"mac_insecure"`
+	// Theme selects the icon style: "emoji" (default) or "text" (no emoji,
+	// status carried as text color).
+	Theme string `mapstructure:"theme"`
 }
 
 // Defaults returns a Config with all segments enabled and default TTLs.
@@ -87,6 +109,7 @@ func Defaults() Config {
 			UsageTTL:  defaultUsageTTL,
 			StatusTTL: defaultStatusTTL,
 		},
+		Theme: ThemeEmoji,
 	}
 }
 
@@ -124,6 +147,13 @@ func Load(configPath string) Config {
 		cfg.Segments.Cost = CostAuto
 	}
 
+	cfg.Theme = NormalizeTheme(cfg.Theme)
+	if cfg.Theme == "" {
+		fmt.Fprintf(os.Stderr, "claudeline: invalid theme %q, using emoji\n", viperInstance.GetString("theme"))
+
+		cfg.Theme = ThemeEmoji
+	}
+
 	return cfg
 }
 
@@ -148,6 +178,7 @@ var knownKeys = map[string]bool{
 	"cache.usage_ttl":  true,
 	"cache.status_ttl": true,
 	"mac_insecure":     true,
+	"theme":            true,
 }
 
 // Validate checks the config file at the given path for errors.
@@ -186,8 +217,17 @@ func Validate(configPath string) []string {
 
 	problems = append(problems, validateSegments(&cfg.Segments, viperInstance)...)
 	problems = append(problems, validateCache(&cfg.Cache)...)
+	problems = append(problems, validateTheme(cfg.Theme)...)
 
 	return problems
+}
+
+func validateTheme(raw string) []string {
+	if NormalizeTheme(raw) == "" {
+		return []string{fmt.Sprintf("theme: unknown value %q (expected emoji or text)", raw)}
+	}
+
+	return nil
 }
 
 func validateSegments(seg *Segments, v *viper.Viper) []string {
@@ -263,6 +303,7 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.per_model_quota", false)
 	viperInstance.SetDefault("segments.credits", true)
 	viperInstance.SetDefault("mac_insecure", false)
+	viperInstance.SetDefault("theme", ThemeEmoji)
 	viperInstance.SetDefault("cache.usage_ttl", defaultUsageTTL)
 	viperInstance.SetDefault("cache.status_ttl", defaultStatusTTL)
 }

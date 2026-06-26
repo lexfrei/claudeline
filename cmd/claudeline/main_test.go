@@ -1415,6 +1415,50 @@ func TestNoOffpeakFlagStillAccepted(t *testing.T) {
 	}
 }
 
+func TestThemeFlagOverride(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCmd()
+	if err := cmd.ParseFlags([]string{"--theme", "text"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Defaults()
+	applyFlagOverrides(cmd, &cfg)
+
+	if cfg.Theme != config.ThemeText {
+		t.Errorf("expected --theme text to override config, got %q", cfg.Theme)
+	}
+}
+
+// TestApplyRuntimeConfigTheme pins the cfg.Theme -> fmtutil.Style glue, the one
+// integration point every rendering test bypasses by setting Style directly. An
+// inverted or miswired branch here would render the wrong theme in the real
+// binary while leaving all those tests green.
+func TestApplyRuntimeConfigTheme(t *testing.T) {
+	cases := map[string]fmtutil.IconStyle{
+		config.ThemeText:  fmtutil.StyleText,
+		config.ThemeEmoji: fmtutil.StyleEmoji,
+		"":                fmtutil.StyleEmoji, // unset normalizes to emoji
+		"bogus":           fmtutil.StyleEmoji, // invalid flag value falls back
+	}
+
+	prev := fmtutil.Style
+
+	t.Cleanup(func() { fmtutil.Style = prev })
+
+	for theme, want := range cases {
+		cfg := config.Defaults()
+		cfg.Theme = theme
+
+		applyRuntimeConfig(&cfg)
+
+		if fmtutil.Style != want {
+			t.Errorf("theme %q -> Style %d, want %d", theme, fmtutil.Style, want)
+		}
+	}
+}
+
 // useTextTheme switches the global icon style to text for one test, restoring
 // it after. Not parallel-safe: Style is shared process state.
 func useTextTheme(t *testing.T) {
