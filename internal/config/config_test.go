@@ -44,10 +44,6 @@ func TestDefaults(t *testing.T) {
 		t.Error("expected credits segment enabled by default")
 	}
 
-	if !cfg.Segments.OffPeak {
-		t.Error("expected offpeak segment enabled by default")
-	}
-
 	if cfg.Cache.UsageTTL != 10*time.Minute {
 		t.Errorf("expected usage TTL 60s, got %v", cfg.Cache.UsageTTL)
 	}
@@ -131,7 +127,6 @@ context = false
 compactions = false
 quota = false
 credits = false
-offpeak = false
 
 [cache]
 usage_ttl = "120s"
@@ -147,7 +142,7 @@ status_ttl = "30s"
 
 	if cfg.Segments.Model || cfg.Segments.Worktree || cfg.Segments.Cost != CostOff || cfg.Segments.Status ||
 		cfg.Segments.Context || cfg.Segments.Compactions || cfg.Segments.Quota ||
-		cfg.Segments.Credits || cfg.Segments.OffPeak {
+		cfg.Segments.Credits {
 		t.Error("expected all segments disabled")
 	}
 
@@ -196,6 +191,27 @@ usage_ttl = "5m"
 	problems := Validate(configPath)
 	if len(problems) != 0 {
 		t.Errorf("expected no problems, got %v", problems)
+	}
+}
+
+func TestValidateToleratesDeprecatedOffpeak(t *testing.T) {
+	t.Parallel()
+
+	// The off-peak feature was removed, but existing configs may still carry
+	// segments.offpeak. It must remain tolerated rather than flagged as a typo.
+	content := `
+[segments]
+offpeak = true
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	problems := Validate(configPath)
+	if len(problems) != 0 {
+		t.Errorf("expected deprecated offpeak key to be tolerated, got %v", problems)
 	}
 }
 

@@ -159,23 +159,21 @@ type Data struct {
 }
 
 // FormatStaleQuotaWindow formats a window with ?% but real time and indicator.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: ?% (3h)").
-func FormatStaleQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
+func FormatStaleQuotaWindow(win *QuotaWindow, label string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s%s %s: ?%% (%s)", indicator, promoIndicator, label, dur)
+	return fmt.Sprintf("%s %s: ?%% (%s)", indicator, label, dur)
 }
 
 // FormatQuotaWindow formats a single quota window for display.
-// The optional promoIndicator is placed right after the rate circle (e.g. "🟢⬆ 5h: 12% (4h 30m)").
-func FormatQuotaWindow(win *QuotaWindow, label, promoIndicator string) string {
+func FormatQuotaWindow(win *QuotaWindow, label string) string {
 	pct := int(win.Utilization + halfRound)
 	indicator := RateIndicator(pct, win.RemainingMinutes, win.TotalMinutes)
 	dur := Duration(win.RemainingMinutes)
 
-	return fmt.Sprintf("%s%s %s: %d%% (%s)", indicator, promoIndicator, label, pct, dur)
+	return fmt.Sprintf("%s %s: %d%% (%s)", indicator, label, pct, dur)
 }
 
 // FormatRateLimitSegment formats the explicit exhausted-limit segment.

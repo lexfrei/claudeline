@@ -51,7 +51,6 @@ type Segments struct {
 	Quota         bool   `mapstructure:"quota"`
 	PerModelQuota bool   `mapstructure:"per_model_quota"`
 	Credits       bool   `mapstructure:"credits"`
-	OffPeak       bool   `mapstructure:"offpeak"`
 }
 
 // Cache controls cache TTL durations.
@@ -83,7 +82,6 @@ func Defaults() Config {
 			Compactions: true,
 			Quota:       true,
 			Credits:     true,
-			OffPeak:     true,
 		},
 		Cache: Cache{
 			UsageTTL:  defaultUsageTTL,
@@ -144,10 +142,12 @@ var knownKeys = map[string]bool{
 	"segments.quota":           true,
 	"segments.per_model_quota": true,
 	"segments.credits":         true,
-	"segments.offpeak":         true,
-	"cache.usage_ttl":          true,
-	"cache.status_ttl":         true,
-	"mac_insecure":             true,
+	// Deprecated no-op: the off-peak promotion feature was removed, but the key
+	// stays tolerated so existing configs do not trip `validate`.
+	"segments.offpeak": true,
+	"cache.usage_ttl":  true,
+	"cache.status_ttl": true,
+	"mac_insecure":     true,
 }
 
 // Validate checks the config file at the given path for errors.
@@ -213,7 +213,6 @@ func validateSegments(seg *Segments, v *viper.Viper) []string {
 		{"segments.quota", v.Get("segments.quota")},
 		{"segments.per_model_quota", v.Get("segments.per_model_quota")},
 		{"segments.credits", v.Get("segments.credits")},
-		{"segments.offpeak", v.Get("segments.offpeak")},
 	}
 
 	for _, field := range boolFields {
@@ -263,7 +262,6 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.quota", true)
 	viperInstance.SetDefault("segments.per_model_quota", false)
 	viperInstance.SetDefault("segments.credits", true)
-	viperInstance.SetDefault("segments.offpeak", true)
 	viperInstance.SetDefault("mac_insecure", false)
 	viperInstance.SetDefault("cache.usage_ttl", defaultUsageTTL)
 	viperInstance.SetDefault("cache.status_ttl", defaultStatusTTL)

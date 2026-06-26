@@ -17,7 +17,6 @@ import (
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/fmtutil"
 	"github.com/lexfrei/claudeline/internal/gitinfo"
-	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
@@ -143,7 +142,12 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("mac-insecure", false, "use macOS Keychain + Anthropic API for per-model quotas and credits")
 	flags.Bool("per-model-quota", false, "enable per-model quota segments (requires --mac-insecure)")
 	flags.Bool("no-credits", false, "disable credits segment (only with --mac-insecure)")
-	flags.Bool("no-offpeak", false, "disable off-peak promotion indicators")
+
+	// Deprecated no-op: the off-peak promotion feature was removed. The flag is
+	// kept (hidden) so existing statusLine.command invocations carrying
+	// --no-offpeak keep parsing instead of failing and blanking the statusline.
+	flags.Bool("no-offpeak", false, "deprecated no-op: off-peak indicators were removed")
+	_ = flags.MarkHidden("no-offpeak")
 
 	rootCmd.AddCommand(newValidateCmd(&configPath))
 
@@ -239,10 +243,6 @@ func applyUsageFlags(cmd *cobra.Command, cfg *config.Config) {
 
 	if flagSet(cmd, "no-credits") {
 		cfg.Segments.Credits = false
-	}
-
-	if flagSet(cmd, "no-offpeak") {
-		cfg.Segments.OffPeak = false
 	}
 }
 
@@ -549,7 +549,7 @@ func buildQuotaFromStdin(data *stdinData) *fmtutil.Data {
 	}
 }
 
-func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, promo promotion.Status) []string {
+func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool) []string {
 	type labeledWindow struct {
 		win   *fmtutil.QuotaWindow
 		label string
@@ -571,7 +571,7 @@ func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, pr
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label))
 		}
 	}
 
@@ -579,35 +579,30 @@ func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool, pr
 }
 
 func appendUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
-	var promo promotion.Status
-	if cfg.Segments.OffPeak {
-		promo = promotion.Current()
-	}
-
 	if cfg.MacInsecure {
-		return appendInsecureUsageSegments(segments, cfg, promo)
+		return appendInsecureUsageSegments(segments, cfg)
 	}
 
-	return appendStdinUsageSegments(segments, data, cfg, promo)
+	return appendStdinUsageSegments(segments, data, cfg)
 }
 
 // appendStdinUsageSegments builds quota segments from stdin rate_limits (default, secure path).
-func appendStdinUsageSegments(segments []string, data *stdinData, cfg *config.Config, promo promotion.Status) []string {
+func appendStdinUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	quotaData := buildQuotaFromStdin(data)
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, quotaData, false, promo)
+		segments = appendQuotaWindows(segments, quotaData, false)
 	}
 
 	return segments
 }
 
 // appendInsecureUsageSegments builds quota segments from Anthropic API via macOS Keychain (--mac-insecure).
-func appendInsecureUsageSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
+func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string {
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
-			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
+			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
 		}
 
 		return segments
@@ -617,13 +612,13 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config, promo pr
 	case "":
 		// no error, continue
 	case "rate_limit_error":
-		return appendRateLimitSegments(segments, cfg, promo)
+		return appendRateLimitSegments(segments, cfg)
 	default:
 		return append(segments, "⚠️ /login needed")
 	}
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota, promo)
+		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota)
 	}
 
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
@@ -634,7 +629,7 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config, promo pr
 	return segments
 }
 
-func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.Status) []string {
+func appendStaleQuotaSegments(segments []string, perModel bool) []string {
 	lastGood := usage.FetchLastGood()
 	if lastGood == nil {
 		return append(segments, "⏳ 7d: ?% (?d)", "⏳ 5h: ?% (?h)")
@@ -661,35 +656,20 @@ func appendStaleQuotaSegments(segments []string, perModel bool, promo promotion.
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label, promoIndicator(w.label, promo)))
+			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label))
 		}
 	}
 
 	return segments
 }
 
-func appendRateLimitSegments(segments []string, cfg *config.Config, promo promotion.Status) []string {
+func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
 	lastGood := usage.FetchLastGood()
 	segments = append(segments, fmtutil.FormatRateLimitSegment(fmtutil.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
 
 	if cfg.Segments.Quota {
-		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota, promo)
+		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
 	}
 
 	return segments
-}
-
-func promoIndicator(label string, promo promotion.Status) string {
-	if !promo.Active {
-		return ""
-	}
-
-	switch {
-	case label == "5h" || strings.HasPrefix(label, "5h-"):
-		return promo.FiveHour
-	case label == "7d" || strings.HasPrefix(label, "7d-"):
-		return promo.SevenDay
-	default:
-		return ""
-	}
 }

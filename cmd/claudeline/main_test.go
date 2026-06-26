@@ -13,7 +13,6 @@ import (
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
-	"github.com/lexfrei/claudeline/internal/promotion"
 	"github.com/lexfrei/claudeline/internal/status"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
@@ -1340,9 +1339,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--no-offpeak", "--mac-insecure"})
+	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -1374,10 +1373,6 @@ func TestApplyFlagOverrides(t *testing.T) {
 		t.Error("expected cost still enabled")
 	}
 
-	if cfg.Segments.OffPeak {
-		t.Error("expected offpeak disabled by flag")
-	}
-
 	if !cfg.MacInsecure {
 		t.Error("expected mac-insecure enabled by flag")
 	}
@@ -1406,98 +1401,15 @@ func TestFlagSetUnknownFlag(t *testing.T) {
 	}
 }
 
-func TestPromoIndicator(t *testing.T) {
+// TestNoOffpeakFlagStillAccepted pins backward compatibility: the off-peak
+// feature was removed, but a statusLine.command that still passes --no-offpeak
+// must keep parsing. A parse error here would make main() exit 1 and blank the
+// whole statusline, not just drop one segment.
+func TestNoOffpeakFlagStillAccepted(t *testing.T) {
 	t.Parallel()
 
-	active := promotion.Status{
-		Active:   true,
-		FiveHour: "⬆",
-	}
-	inactive := promotion.Status{}
-
-	tests := []struct {
-		name  string
-		label string
-		promo promotion.Status
-		want  string
-	}{
-		{"5h active", "5h", active, "⬆"},
-		{"7d active", "7d", active, ""},
-		{"7d-opus active", "7d-opus", active, ""},
-		{"7d-sonnet active", "7d-sonnet", active, ""},
-		{"7d-cowork active", "7d-cowork", active, ""},
-		{"7d-oauth active", "7d-oauth", active, ""},
-		{"5h-opus hypothetical", "5h-opus", active, "⬆"},
-		{"unknown label active", "credits", active, ""},
-		{"5h inactive", "5h", inactive, ""},
-		{"7d inactive", "7d", inactive, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := promoIndicator(tt.label, tt.promo)
-			if got != tt.want {
-				t.Errorf("promoIndicator(%q) = %q, want %q", tt.label, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestAppendUsageSegmentsOffPeak(t *testing.T) {
-	cleanup := setupTestEnv(t)
-	defer cleanup()
-
-	// Set NowFn to off-peak time during March 2026 promo.
-	origNow := promotion.NowFn
-
-	defer func() { promotion.NowFn = origNow }()
-
-	// March 16 2026 Monday 20:00 EDT = March 17 00:00 UTC (off-peak).
-	promotion.NowFn = func() time.Time {
-		return time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC)
-	}
-
-	resetsAt := promotion.NowFn().Add(3 * time.Hour).UTC().Format(time.RFC3339)
-
-	keychain.GetFn = func() (string, error) { return testToken, nil }
-	usage.HTTPGetFn = func(_ string, _ map[string]string, _ time.Duration) (*httpclient.Response, error) {
-		return &httpclient.Response{
-			StatusCode: http.StatusOK,
-			Body: []byte(`{
-				"five_hour": {"utilization": 30, "resets_at": "` + resetsAt + `"},
-				"seven_day": {"utilization": 45, "resets_at": "` + resetsAt + `"}
-			}`),
-		}, nil
-	}
-
-	segments := appendUsageSegments(nil, &stdinData{}, insecureCfg())
-	joined := strings.Join(segments, " | ")
-
-	if !strings.Contains(joined, "⬆") {
-		t.Errorf("expected up-arrow indicator for 5h off-peak, got %q", joined)
-	}
-
-	// 7d should NOT have any off-peak indicator (7d still counts during off-peak).
-	if strings.Contains(joined, "⏸") {
-		t.Errorf("7d should not have pause indicator, got %q", joined)
-	}
-
-	// Verify indicator position: should be immediately after rate circle emoji.
-	if !strings.Contains(joined, "🟢⬆") && !strings.Contains(joined, "🟡⬆") &&
-		!strings.Contains(joined, "🟠⬆") && !strings.Contains(joined, "🔴⬆") {
-		t.Errorf("expected up-arrow immediately after rate circle for 5h, got %q", joined)
-	}
-
-	// Verify indicators are absent when offpeak is disabled.
-	cfg := insecureCfg()
-	cfg.Segments.OffPeak = false
-
-	segmentsDisabled := appendUsageSegments(nil, &stdinData{}, cfg)
-	joinedDisabled := strings.Join(segmentsDisabled, " | ")
-
-	if strings.Contains(joinedDisabled, "⬆") {
-		t.Errorf("expected no off-peak indicators when disabled, got %q", joinedDisabled)
+	cmd := newRootCmd()
+	if err := cmd.ParseFlags([]string{"--no-offpeak"}); err != nil {
+		t.Fatalf("removed flag must remain a no-op for backward compat, got %v", err)
 	}
 }

@@ -168,7 +168,7 @@ func TestFormatQuotaWindow(t *testing.T) {
 		RemainingMinutes: 6857,
 	}
 
-	got := FormatQuotaWindow(win, "7d", "")
+	got := FormatQuotaWindow(win, "7d")
 	if got == "" {
 		t.Error("FormatQuotaWindow returned empty string")
 	}
@@ -188,7 +188,7 @@ func TestFormatStaleQuotaWindow(t *testing.T) {
 		RemainingMinutes: 6857,
 	}
 
-	got := FormatStaleQuotaWindow(win, "7d", "")
+	got := FormatStaleQuotaWindow(win, "7d")
 	if !strings.Contains(got, "?%") {
 		t.Errorf("FormatStaleQuotaWindow should contain '?%%', got %q", got)
 	}

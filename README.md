@@ -24,7 +24,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 | 🧠 Context | Context window usage percentage (color-coded) |
 | 🔄 Compactions | Number of context compactions in current session |
 | 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
-| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset (⬆ during off-peak promotions) |
+| 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset |
 
 ### Model indicators
 
@@ -67,12 +67,6 @@ The cost segment has three modes:
 - `false` — never show
 
 Set via `--cost auto|true|false` or `cost = "auto"` in config.
-
-### Off-peak promotions
-
-During [Anthropic usage promotions](https://support.claude.com/en/articles/14063676-claude-march-2026-usage-promotion), off-peak hours provide boosted 5-hour limits. claudeline shows ⬆ next to the 5h quota segment when a promotion is active and you are in an off-peak window. The 7-day limit is unaffected — only bonus usage above the normal 5h cap is excluded from weekly counting.
-
-Disable with `--no-offpeak` or `offpeak = false` in config.
 
 ## Requirements
 
@@ -149,7 +143,6 @@ status = true
 context = true
 compactions = true
 quota = true
-offpeak = true
 
 [cache]
 status_ttl = "15s"
@@ -168,7 +161,7 @@ claudeline --cost false --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--no-offpeak`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
+Available flags: `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
 
 ## Advanced: `--mac-insecure` mode
 
