@@ -229,8 +229,12 @@ type Data struct {
 	SevenDaySonnet    *QuotaWindow
 	SevenDayCowork    *QuotaWindow
 	SevenDayOAuthApps *QuotaWindow
-	Extra             *ExtraUsage
-	ErrorType         string
+	// Scoped holds per-model weekly windows the server names itself (limits[]
+	// entries scoped to a model, e.g. "Fable"). Unlike the fields above these
+	// need no client change when a new model ships.
+	Scoped    []ScopedWindow
+	Extra     *ExtraUsage
+	ErrorType string
 }
 
 // FormatStaleQuotaWindow formats a window with ?% but real time and indicator.

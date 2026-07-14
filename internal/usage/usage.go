@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lexfrei/claudeline/internal/cache"
@@ -29,20 +30,30 @@ const (
 	authFailTTL              = 1 * time.Hour
 )
 
+// Default locations of the on-disk state. They are named so tests can assert
+// they were redirected: ParseBody writes to LastGoodCachePath on every call, so
+// a suite that left these in place would overwrite the running statusline's cache.
+const (
+	defaultCachePath         = "/tmp/claude-usage-cache.json"
+	defaultLastGoodCachePath = "/tmp/claude-usage-last-good.json"
+	defaultRetryAfterPath    = "/tmp/claude-usage-retry-after"
+	defaultAuthFailPath      = "/tmp/claude-usage-auth-failed"
+)
+
 // CacheTTL is the cache duration for usage data. Configurable at startup.
 var CacheTTL = 10 * time.Minute
 
 // CachePath is the path to the usage cache file. Replaceable for testing.
-var CachePath = "/tmp/claude-usage-cache.json"
+var CachePath = defaultCachePath
 
 // LastGoodCachePath stores the last successful API response. Replaceable for testing.
-var LastGoodCachePath = "/tmp/claude-usage-last-good.json"
+var LastGoodCachePath = defaultLastGoodCachePath
 
 // RetryAfterPath stores the retry-after deadline. Replaceable for testing.
-var RetryAfterPath = "/tmp/claude-usage-retry-after"
+var RetryAfterPath = defaultRetryAfterPath
 
 // AuthFailPath stores the token hash of the last authentication failure. Replaceable for testing.
-var AuthFailPath = "/tmp/claude-usage-auth-failed"
+var AuthFailPath = defaultAuthFailPath
 
 // HTTPGetFn is the function used for HTTP requests. Replaceable for testing.
 var HTTPGetFn httpclient.GetFn = httpclient.Get
@@ -60,7 +71,8 @@ type apiResponse struct {
 		MonthlyLimit float64 `json:"monthly_limit"` //nolint:tagliatelle // External API format
 		UsedCredits  float64 `json:"used_credits"`  //nolint:tagliatelle // External API format
 	} `json:"extra_usage"` //nolint:tagliatelle // External API format
-	Error *struct {
+	Limits []apiLimit `json:"limits"`
+	Error  *struct {
 		Type string `json:"type"`
 	} `json:"error"`
 }
@@ -69,6 +81,32 @@ type apiResponse struct {
 type apiWindow struct {
 	Utilization float64 `json:"utilization"`
 	ResetsAt    string  `json:"resets_at"` //nolint:tagliatelle // External API format
+}
+
+// kindWeeklyScoped marks a limits[] entry that applies to one scope (a model or
+// a surface) rather than the account as a whole.
+const kindWeeklyScoped = "weekly_scoped"
+
+// apiLimit is an entry of the limits[] array. Per-model quotas (Fable and any
+// future model) arrive here rather than as top-level fields, so the server can
+// add buckets without a client release.
+//
+// Two fields of an entry are deliberately ignored. severity is the server's own
+// colour, while the statusline derives colour from utilization against elapsed
+// time. is_active marks a limit that is currently biting, not one that applies:
+// live responses carry is_active false on the account's own session and weekly
+// limits while they still have headroom, and true only once a bucket is spent.
+// Skipping inactive entries would therefore hide every quota that is not yet
+// exhausted — exactly the ones worth watching.
+type apiLimit struct {
+	Kind     string  `json:"kind"`
+	Percent  float64 `json:"percent"`
+	ResetsAt string  `json:"resets_at"` //nolint:tagliatelle // External API format
+	Scope    *struct {
+		Model *struct {
+			DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
+		} `json:"model"`
+	} `json:"scope"`
 }
 
 // Fetch retrieves quota usage from Anthropic API (with caching).
@@ -228,6 +266,8 @@ func ParseBody(body []byte) (*fmtutil.Data, error) {
 		result.SevenDayOAuthApps = parseWindow(resp.SevenDayOAuthApps, fmtutil.SevenDayWindowMinutes)
 	}
 
+	result.Scoped = parseScopedWindows(resp.Limits)
+
 	if resp.ExtraUsage != nil && resp.ExtraUsage.IsEnabled && resp.ExtraUsage.UsedCredits > 0 {
 		result.Extra = &fmtutil.ExtraUsage{
 			MonthlyLimit: resp.ExtraUsage.MonthlyLimit,
@@ -236,6 +276,37 @@ func ParseBody(body []byte) (*fmtutil.Data, error) {
 	}
 
 	return result, nil
+}
+
+// parseScopedWindows extracts per-model weekly windows from the limits[] array.
+// Entries without a model scope (surface-scoped buckets) and entries whose reset
+// timestamp does not parse are skipped: neither can be rendered as a model quota.
+func parseScopedWindows(limits []apiLimit) []fmtutil.ScopedWindow {
+	var scoped []fmtutil.ScopedWindow
+
+	for _, limit := range limits {
+		if limit.Kind != kindWeeklyScoped || limit.Scope == nil || limit.Scope.Model == nil {
+			continue
+		}
+
+		// A blank name would render as a bare "7d-" label, so it is no name at all.
+		name := strings.TrimSpace(limit.Scope.Model.DisplayName)
+		if name == "" {
+			continue
+		}
+
+		win := parseWindow(&apiWindow{
+			Utilization: limit.Percent,
+			ResetsAt:    limit.ResetsAt,
+		}, fmtutil.SevenDayWindowMinutes)
+		if win == nil {
+			continue
+		}
+
+		scoped = append(scoped, fmtutil.ScopedWindow{Name: name, Window: win})
+	}
+
+	return scoped
 }
 
 func parseWindow(win *apiWindow, totalMinutes int) *fmtutil.QuotaWindow {
