@@ -25,6 +25,7 @@ Real-time statusline for [Claude Code](https://docs.anthropic.com/en/docs/claude
 | 🔄 Compactions | Number of context compactions in current session |
 | 🟢/🟡/🟠/🔴 7d | 7-day rolling quota utilization with time until reset |
 | 🟢/🟡/🟠/🔴 5h | 5-hour rolling quota utilization with time until reset |
+| 🟢/🟡/🟠/🔴 7d-&lt;model&gt; | 7-day quota of the model in use, labelled after the bucket the server reports, e.g. `7d-fable` (requires [`--mac-insecure`](#advanced---mac-insecure-mode)) |
 
 ### Model indicators
 
@@ -160,12 +161,13 @@ status = true
 context = true
 compactions = true
 quota = true
+per_model_quota = "auto" # only takes effect with mac_insecure
 
 [cache]
 status_ttl = "15s"
 ```
 
-Set any segment to `false` to hide it (`cost` accepts `"auto"`, `"true"`, `"false"`; `theme` accepts `"emoji"`, `"text"`).
+Set any segment to `false` to hide it (`cost` and `per_model_quota` accept `"auto"`, `"true"`, `"false"`; `theme` accepts `"emoji"`, `"text"`).
 
 Run `claudeline validate --config ~/.claudelinerc.toml` to check your config for typos and invalid values.
 
@@ -178,35 +180,53 @@ claudeline --cost false --no-status
 claudeline --config /path/to/config.toml
 ```
 
-Available flags: `--theme`, `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--mac-insecure`, `--per-model-quota`, `--no-credits`. The last two only take effect with `--mac-insecure`.
+Available flags: `--theme`, `--no-model`, `--no-effort`, `--no-thinking`, `--no-fast-mode`, `--no-repo`, `--no-worktree`, `--cost`, `--no-status`, `--no-context`, `--no-compactions`, `--no-quota`, `--mac-insecure`, `--per-model-quota=auto|true|false`, `--no-credits`. The last two only take effect with `--mac-insecure`.
+
+`--per-model-quota` is the one flag whose value must be attached with `=` (a bare `--per-model-quota` keeps its old meaning, "every window", which rules out the space form). See [Per-model quota modes](#per-model-quota-modes).
 
 ## Advanced: `--mac-insecure` mode
 
 For additional data not available in stdin, claudeline can access the Anthropic usage API directly via macOS Keychain. This gives you:
 
-- Per-model 7-day quotas (Opus, Sonnet, Cowork, OAuth apps)
+- Per-model 7-day quotas, including the buckets the API reports per model (Opus, Sonnet, Fable, …)
 - Extra credit usage (💳 segment)
+
+Stdin carries only the account-wide 5-hour and 7-day windows, so per-model quotas are available in this mode alone.
 
 **Security note:** this mode reads your OAuth token from macOS Keychain. Only enable it if you understand the implications.
 
 ```bash
-claudeline --mac-insecure --per-model-quota
+claudeline --mac-insecure
 ```
 
 ```toml
 mac_insecure = true
 
 [segments]
-per_model_quota = true
+per_model_quota = "auto"
 credits = true
 
 [cache]
 usage_ttl = "10m"
 ```
 
-Additional flags with `--mac-insecure`: `--per-model-quota`, `--no-credits`.
-
 **Known limitations of `--mac-insecure`:** the Anthropic usage API has a very low rate limit (~5 requests per window). Responses are cached for 10 minutes by default (`usage_ttl`). macOS only.
+
+### Per-model quota modes
+
+`per_model_quota` selects which per-model windows are shown:
+
+| Mode | Behavior |
+| --- | --- |
+| `auto` (default) | Only the window of the model in use — selecting Fable shows `7d-fable`, selecting Opus shows `7d-opus`. The label follows the bucket the server reports, so a finer bucket renders under its own name (`7d-sonnet-4-5`) |
+| `true` | Every window the API reports |
+| `false` | No per-model windows |
+
+**The default changed:** per-model quotas used to be off unless explicitly enabled. They now default to `auto`, so a `--mac-insecure` statusline gains a `7d-<model>` segment whenever the API reports a quota for the model in use. Set `per_model_quota = false` to restore the previous behavior.
+
+On the command line the value must be attached with `=`: `--per-model-quota=auto`, `--per-model-quota=true`, `--per-model-quota=false`. A bare `--per-model-quota` still means "every window", as it always did.
+
+Model buckets are named by the server, so a quota for a newly released model appears without a claudeline update.
 
 ## License
 
