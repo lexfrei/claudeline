@@ -104,6 +104,9 @@ type apiLimit struct {
 	ResetsAt string  `json:"resets_at"` //nolint:tagliatelle // External API format
 	Scope    *struct {
 		Model *struct {
+			// ID is null in every response seen so far, but when the server
+			// starts sending it, it identifies the model exactly.
+			ID          string `json:"id"`
 			DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
 		} `json:"model"`
 	} `json:"scope"`
@@ -303,7 +306,11 @@ func parseScopedWindows(limits []apiLimit) []fmtutil.ScopedWindow {
 			continue
 		}
 
-		scoped = append(scoped, fmtutil.ScopedWindow{Name: name, Window: win})
+		scoped = append(scoped, fmtutil.ScopedWindow{
+			Name:   name,
+			ID:     strings.TrimSpace(limit.Scope.Model.ID),
+			Window: win,
+		})
 	}
 
 	return scoped

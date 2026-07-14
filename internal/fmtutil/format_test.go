@@ -213,7 +213,7 @@ func TestFindExhaustedWindow(t *testing.T) {
 			Utilization:      99,
 			RemainingMinutes: 125,
 		},
-	}, false)
+	}, nil)
 
 	if got == nil {
 		t.Fatal("expected non-nil ExhaustedWindow")
@@ -240,7 +240,7 @@ func TestFindExhaustedWindowFiveHour(t *testing.T) {
 			Utilization:      50,
 			RemainingMinutes: 125,
 		},
-	}, false)
+	}, nil)
 
 	if got == nil {
 		t.Fatal("expected non-nil ExhaustedWindow")
@@ -265,7 +265,7 @@ func TestFindExhaustedWindowPerModel(t *testing.T) {
 		},
 	}
 
-	got := FindExhaustedWindow(data, true)
+	got := FindExhaustedWindow(data, data.PerModelWindows())
 	if got == nil {
 		t.Fatal("expected non-nil ExhaustedWindow")
 	}
@@ -274,16 +274,16 @@ func TestFindExhaustedWindowPerModel(t *testing.T) {
 		t.Errorf("Name = %q, want %q", got.Name, "7d-opus")
 	}
 
-	gotDisabled := FindExhaustedWindow(data, false)
+	gotDisabled := FindExhaustedWindow(data, nil)
 	if gotDisabled != nil {
-		t.Errorf("expected nil when perModel is false, got %+v", gotDisabled)
+		t.Errorf("expected nil when per-model windows are not displayed, got %+v", gotDisabled)
 	}
 }
 
 func TestFindExhaustedWindowNil(t *testing.T) {
 	t.Parallel()
 
-	if got := FindExhaustedWindow(nil, false); got != nil {
+	if got := FindExhaustedWindow(nil, nil); got != nil {
 		t.Error("expected nil for nil data")
 	}
 }
@@ -294,7 +294,7 @@ func TestFindExhaustedWindowNoExhausted(t *testing.T) {
 	got := FindExhaustedWindow(&Data{
 		FiveHour: &QuotaWindow{Utilization: 50, RemainingMinutes: 45},
 		SevenDay: &QuotaWindow{Utilization: 60, RemainingMinutes: 125},
-	}, false)
+	}, nil)
 
 	if got != nil {
 		t.Error("expected nil when no window is exhausted")

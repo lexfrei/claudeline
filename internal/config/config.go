@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -14,26 +15,73 @@ const (
 	defaultStatusTTL = 15 * time.Second
 )
 
-// Cost mode values.
+// Canonical values every mode option resolves to. The options below are named
+// after them so a mode can be compared without knowing which option it came from.
 const (
-	CostAuto = "auto"
-	CostOn   = "true"
-	CostOff  = "false"
+	modeAuto = "auto"
+	modeOn   = "true"
+	modeOff  = "false"
 )
 
-// NormalizeCostMode converts various user inputs to a canonical cost mode.
-// Accepts: "auto", "true"/"1"/"on", "false"/"0"/"off". Returns "" for unknown values.
-func NormalizeCostMode(raw string) string {
-	switch raw {
-	case CostAuto, "":
-		return CostAuto
-	case "true", "1", "on":
-		return CostOn
-	case "false", "0", "off":
-		return CostOff
+// Cost mode values.
+const (
+	CostAuto = modeAuto
+	CostOn   = modeOn
+	CostOff  = modeOff
+)
+
+// normalizeBoolish maps a boolean-ish value onto modeOn or modeOff. It accepts
+// every spelling strconv.ParseBool accepts — the mode options were plain bool
+// flags once, and a config or command line carrying "True" or "T" must keep
+// working — plus the on/off pair. Returns "" when the value is not boolean-ish.
+func normalizeBoolish(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case modeOn, "t", "1", "on":
+		return modeOn
+	case modeOff, "f", "0", "off":
+		return modeOff
 	default:
 		return ""
 	}
+}
+
+// NormalizeCostMode converts various user inputs to a canonical cost mode.
+// Accepts "auto" and any boolean-ish value. Returns "" for unknown values.
+func NormalizeCostMode(raw string) string {
+	if isAuto(raw) {
+		return CostAuto
+	}
+
+	return normalizeBoolish(raw)
+}
+
+// isAuto reports whether a mode value asks for the automatic behavior. An empty
+// value means the option was not set, which is the automatic default.
+func isAuto(raw string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+
+	return trimmed == modeAuto || trimmed == ""
+}
+
+// Per-model quota mode values.
+const (
+	// PerModelAuto shows only the per-model window matching the selected model.
+	PerModelAuto = modeAuto
+	// PerModelAll shows every per-model window the server reports.
+	PerModelAll = modeOn
+	// PerModelOff shows no per-model windows.
+	PerModelOff = modeOff
+)
+
+// NormalizePerModelQuota converts user input to a canonical per-model quota mode.
+// Booleans are accepted in every spelling the option's former bool flag took.
+// Returns "" for unknown values.
+func NormalizePerModelQuota(raw string) string {
+	if isAuto(raw) {
+		return PerModelAuto
+	}
+
+	return normalizeBoolish(raw)
 }
 
 // Theme values selecting the statusline icon style.
@@ -68,7 +116,7 @@ type Segments struct {
 	Context       bool   `mapstructure:"context"`
 	Compactions   bool   `mapstructure:"compactions"`
 	Quota         bool   `mapstructure:"quota"`
-	PerModelQuota bool   `mapstructure:"per_model_quota"`
+	PerModelQuota string `mapstructure:"per_model_quota"`
 	Credits       bool   `mapstructure:"credits"`
 }
 
@@ -92,18 +140,19 @@ type Config struct {
 func Defaults() Config {
 	return Config{
 		Segments: Segments{
-			Model:       true,
-			Effort:      true,
-			Thinking:    true,
-			FastMode:    true,
-			Repo:        true,
-			Worktree:    true,
-			Cost:        CostAuto,
-			Status:      true,
-			Context:     true,
-			Compactions: true,
-			Quota:       true,
-			Credits:     true,
+			Model:         true,
+			Effort:        true,
+			Thinking:      true,
+			FastMode:      true,
+			Repo:          true,
+			Worktree:      true,
+			Cost:          CostAuto,
+			Status:        true,
+			Context:       true,
+			Compactions:   true,
+			Quota:         true,
+			PerModelQuota: PerModelAuto,
+			Credits:       true,
 		},
 		Cache: Cache{
 			UsageTTL:  defaultUsageTTL,
@@ -145,6 +194,14 @@ func Load(configPath string) Config {
 		fmt.Fprintf(os.Stderr, "claudeline: invalid cost mode %q, using auto\n", viperInstance.GetString("segments.cost"))
 
 		cfg.Segments.Cost = CostAuto
+	}
+
+	cfg.Segments.PerModelQuota = NormalizePerModelQuota(cfg.Segments.PerModelQuota)
+	if cfg.Segments.PerModelQuota == "" {
+		fmt.Fprintf(os.Stderr, "claudeline: invalid per-model quota mode %q, using auto\n",
+			viperInstance.GetString("segments.per_model_quota"))
+
+		cfg.Segments.PerModelQuota = PerModelAuto
 	}
 
 	cfg.Theme = NormalizeTheme(cfg.Theme)
@@ -237,6 +294,11 @@ func validateSegments(seg *Segments, v *viper.Viper) []string {
 		problems = append(problems, fmt.Sprintf("segments.cost: unknown value %q (expected auto, true, or false)", raw))
 	}
 
+	if raw := seg.PerModelQuota; NormalizePerModelQuota(raw) == "" {
+		problems = append(problems,
+			fmt.Sprintf("segments.per_model_quota: unknown value %q (expected auto, true, or false)", raw))
+	}
+
 	boolFields := []struct {
 		key string
 		raw any
@@ -251,7 +313,6 @@ func validateSegments(seg *Segments, v *viper.Viper) []string {
 		{"segments.context", v.Get("segments.context")},
 		{"segments.compactions", v.Get("segments.compactions")},
 		{"segments.quota", v.Get("segments.quota")},
-		{"segments.per_model_quota", v.Get("segments.per_model_quota")},
 		{"segments.credits", v.Get("segments.credits")},
 	}
 
@@ -300,7 +361,7 @@ func setViperDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("segments.context", true)
 	viperInstance.SetDefault("segments.compactions", true)
 	viperInstance.SetDefault("segments.quota", true)
-	viperInstance.SetDefault("segments.per_model_quota", false)
+	viperInstance.SetDefault("segments.per_model_quota", PerModelAuto)
 	viperInstance.SetDefault("segments.credits", true)
 	viperInstance.SetDefault("mac_insecure", false)
 	viperInstance.SetDefault("theme", ThemeEmoji)

@@ -1110,7 +1110,7 @@ func TestAppendUsageSegmentsPerModel(t *testing.T) {
 	}
 
 	cfg := insecureCfg()
-	cfg.Segments.PerModelQuota = true
+	cfg.Segments.PerModelQuota = config.PerModelAll
 
 	segments := appendUsageSegments(nil, &stdinData{}, cfg)
 	joined := strings.Join(segments, " | ")
@@ -1247,7 +1247,7 @@ func TestNewRootCmdWithFlags(t *testing.T) {
 	usage.HTTPGetFn = failHTTP
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--cost", "false", "--config", "/nonexistent/config.toml"})
+	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--cost", "false", flagConfig, "/nonexistent/config.toml"})
 	cmd.SetIn(strings.NewReader(`{"workspace":{"git_worktree":"feat-api"}}`))
 
 	captured := captureStdout(t, func() {
@@ -1325,7 +1325,7 @@ usage_ttl = "30s"
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath})
+	cmd.SetArgs([]string{flagConfig, configPath})
 	cmd.SetIn(strings.NewReader(`{}`))
 
 	err := cmd.Execute()
@@ -1340,9 +1340,9 @@ usage_ttl = "30s"
 
 func TestApplyFlagOverrides(t *testing.T) {
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--mac-insecure"})
+	cmd.SetArgs([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", flagPerModelQuota, "--mac-insecure"})
 
-	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", "--per-model-quota", "--mac-insecure"})
+	parseErr := cmd.ParseFlags([]string{flagNoModel, flagNoWorktree, "--no-quota", "--no-credits", flagPerModelQuota, "--mac-insecure"})
 	if parseErr != nil {
 		t.Fatal(parseErr)
 	}
@@ -1366,8 +1366,8 @@ func TestApplyFlagOverrides(t *testing.T) {
 		t.Error("expected credits disabled by flag")
 	}
 
-	if !cfg.Segments.PerModelQuota {
-		t.Error("expected per-model quota enabled by flag")
+	if cfg.Segments.PerModelQuota != config.PerModelAll {
+		t.Error("expected per-model quota set to all by flag")
 	}
 
 	if cfg.Segments.Cost == config.CostOff {

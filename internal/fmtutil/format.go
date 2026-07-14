@@ -217,8 +217,11 @@ type ExtraUsage struct {
 
 // ExhaustedWindow contains information about which rate limit window was exhausted.
 type ExhaustedWindow struct {
-	Name    string // "5h", "7d", "7d-opus", "7d-sonnet", "7d-cowork", or "7d-oauth"
-	Minutes int    // minutes until reset
+	// Name is "5h", "7d", or a per-model label built by ScopedLabel from the
+	// bucket name the server supplied ("7d-opus", "7d-fable", …) — the set is
+	// open, since the server names the buckets.
+	Name    string
+	Minutes int // minutes until reset
 }
 
 // Data is the parsed quota usage data.
@@ -269,8 +272,9 @@ func FormatRateLimitSegment(exhausted *ExhaustedWindow) string {
 }
 
 // FindExhaustedWindow returns the most saturated active window that is exhausted.
-// When perModel is true, per-model windows (opus, sonnet, cowork, oauth) are included.
-func FindExhaustedWindow(data *Data, perModel bool) *ExhaustedWindow {
+// The account-wide windows are always considered; perModel adds the per-model
+// windows the caller decided to display, so a hidden window never names the limit.
+func FindExhaustedWindow(data *Data, perModel []ScopedWindow) *ExhaustedWindow {
 	if data == nil {
 		return nil
 	}
@@ -285,13 +289,8 @@ func FindExhaustedWindow(data *Data, perModel bool) *ExhaustedWindow {
 		{data.SevenDay, "7d"},
 	}
 
-	if perModel {
-		windows = append(windows,
-			windowEntry{data.SevenDayOpus, "7d-opus"},
-			windowEntry{data.SevenDaySonnet, "7d-sonnet"},
-			windowEntry{data.SevenDayCowork, "7d-cowork"},
-			windowEntry{data.SevenDayOAuthApps, "7d-oauth"},
-		)
+	for _, scoped := range perModel {
+		windows = append(windows, windowEntry{scoped.Window, ScopedLabel(scoped.Name)})
 	}
 
 	var best *ExhaustedWindow
