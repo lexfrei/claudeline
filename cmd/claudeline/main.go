@@ -26,13 +26,6 @@ var (
 	commit  = "none"
 )
 
-const (
-	labelSevenDayOpus      = "7d-opus"
-	labelSevenDaySonnet    = "7d-sonnet"
-	labelSevenDayCowork    = "7d-cowork"
-	labelSevenDayOAuthApps = "7d-oauth"
-)
-
 type stdinRateWindow struct {
 	UsedPercentage float64 `json:"used_percentage"` //nolint:tagliatelle // External API format
 	ResetsAt       float64 `json:"resets_at"`       //nolint:tagliatelle // External API format
@@ -52,6 +45,7 @@ type stdinPRInfo struct {
 
 type stdinData struct {
 	Model struct {
+		ID          string `json:"id"`
 		DisplayName string `json:"display_name"` //nolint:tagliatelle // External API format
 	} `json:"model"`
 	Effort struct {
@@ -135,7 +129,15 @@ func newRootCmd() *cobra.Command {
 	flags.Bool("no-compactions", false, "disable compactions segment")
 	flags.Bool("no-quota", false, "disable quota segment")
 	flags.Bool("mac-insecure", false, "use macOS Keychain + Anthropic API for per-model quotas and credits")
-	flags.Bool("per-model-quota", false, "enable per-model quota segments (requires --mac-insecure)")
+	// The value must be attached with "=": a bare --per-model-quota keeps its
+	// original meaning (show every window), which requires NoOptDefVal, and a
+	// flag carrying NoOptDefVal never consumes the next argument — so the space
+	// form would leave the value behind as a positional arg and exit non-zero,
+	// blanking the statusline. Spell the "=" form everywhere it is documented.
+	flags.String("per-model-quota", "",
+		"per-model quota segments, requires --mac-insecure: --per-model-quota=auto (selected model, default), =true (all), =false (none)")
+	flags.Lookup("per-model-quota").NoOptDefVal = config.PerModelAll
+
 	flags.Bool("no-credits", false, "disable credits segment (only with --mac-insecure)")
 	flags.String("theme", "", "icon theme: emoji (default) or text")
 
@@ -231,10 +233,19 @@ func applyIdentityFlags(cmd *cobra.Command, cfg *config.Config) {
 }
 
 func applyDisplayFlags(cmd *cobra.Command, cfg *config.Config) {
-	if flagSet(cmd, "cost") {
-		if val, _ := cmd.PersistentFlags().GetString("cost"); val != "" {
-			cfg.Segments.Cost = val
+	// The flag takes the same spellings as the config key, and an unknown value
+	// warns instead of being swallowed — a mode that silently reads as "auto"
+	// looks identical to a typo that did nothing. An empty --cost= carries no
+	// choice, so it leaves the config value alone.
+	if raw, _ := cmd.PersistentFlags().GetString("cost"); flagSet(cmd, "cost") && raw != "" {
+		mode := config.NormalizeCostMode(raw)
+		if mode == "" {
+			fmt.Fprintf(os.Stderr, "claudeline: invalid cost mode %q, using auto\n", raw)
+
+			mode = config.CostAuto
 		}
+
+		cfg.Segments.Cost = mode
 	}
 
 	if flagSet(cmd, "theme") {
@@ -265,8 +276,17 @@ func applyUsageFlags(cmd *cobra.Command, cfg *config.Config) {
 		cfg.MacInsecure = true
 	}
 
-	if flagSet(cmd, "per-model-quota") {
-		cfg.Segments.PerModelQuota = true
+	// As with --cost, an empty --per-model-quota= carries no choice and leaves the
+	// config value alone.
+	if raw, _ := cmd.PersistentFlags().GetString("per-model-quota"); flagSet(cmd, "per-model-quota") && raw != "" {
+		mode := config.NormalizePerModelQuota(raw)
+		if mode == "" {
+			fmt.Fprintf(os.Stderr, "claudeline: invalid per-model quota mode %q, using auto\n", raw)
+
+			mode = config.PerModelAuto
+		}
+
+		cfg.Segments.PerModelQuota = mode
 	}
 
 	if flagSet(cmd, "no-credits") {
@@ -573,60 +593,127 @@ func buildQuotaFromStdin(data *stdinData) *fmtutil.Data {
 	}
 }
 
-func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel bool) []string {
+// modelQuotaSelector picks the per-model quota windows to display, following the
+// per_model_quota mode and the model currently selected in the session.
+type modelQuotaSelector struct {
+	mode        string
+	modelID     string
+	displayName string
+}
+
+// newModelQuotaSelector normalizes the mode rather than trusting its writers to
+// have done it: an unrecognized value would otherwise fall through to auto, which
+// is indistinguishable from having asked for auto.
+func newModelQuotaSelector(data *stdinData, cfg *config.Config) modelQuotaSelector {
+	mode := config.NormalizePerModelQuota(cfg.Segments.PerModelQuota)
+	if mode == "" {
+		mode = config.PerModelAuto
+	}
+
+	return modelQuotaSelector{
+		mode:        mode,
+		modelID:     data.Model.ID,
+		displayName: data.Model.DisplayName,
+	}
+}
+
+// windows returns nothing when per-model quotas are off, every reported window
+// when they are all requested, and otherwise (auto) only the window belonging to
+// the model in use — so switching to Fable surfaces the Fable bucket by itself.
+// A model reported by more than one bucket collapses to the bucket closest to
+// its limit, so the constraint that will bite first is never the hidden one.
+func (s modelQuotaSelector) windows(data *fmtutil.Data) []fmtutil.ScopedWindow {
+	if data == nil || s.mode == config.PerModelOff {
+		return nil
+	}
+
+	if s.mode == config.PerModelAll {
+		return data.PerModelWindows()
+	}
+
+	// Match against the uncollapsed candidates: two buckets can share a label
+	// while naming different models, and collapsing first could let the bucket of
+	// another model win the label and hide the one that applies here.
+	candidates := data.PerModelCandidates()
+
+	matched := make([]fmtutil.ScopedWindow, 0, len(candidates))
+
+	for _, win := range candidates {
+		if fmtutil.MatchesScopedModel(s.modelID, s.displayName, win) {
+			matched = append(matched, win)
+		}
+	}
+
+	return fmtutil.MostBinding(matched)
+}
+
+// appendWindowSegments renders the account-wide windows followed by the per-model
+// ones the caller selected, through the given formatter. The fresh and the stale
+// paths differ only in that formatter, so the window list is assembled once.
+func appendWindowSegments(
+	segments []string,
+	data *fmtutil.Data,
+	perModel []fmtutil.ScopedWindow,
+	format func(*fmtutil.QuotaWindow, string) string,
+) []string {
 	type labeledWindow struct {
 		win   *fmtutil.QuotaWindow
 		label string
 	}
 
-	windows := []labeledWindow{
-		{data.SevenDay, "7d"},
-		{data.FiveHour, "5h"},
-	}
+	windows := make([]labeledWindow, 0, 2+len(perModel)) //nolint:mnd // the two account-wide windows below
+	windows = append(windows,
+		labeledWindow{data.SevenDay, "7d"},
+		labeledWindow{data.FiveHour, "5h"},
+	)
 
-	if perModel {
-		windows = append(windows,
-			labeledWindow{data.SevenDayOpus, labelSevenDayOpus},
-			labeledWindow{data.SevenDaySonnet, labelSevenDaySonnet},
-			labeledWindow{data.SevenDayCowork, labelSevenDayCowork},
-			labeledWindow{data.SevenDayOAuthApps, labelSevenDayOAuthApps},
-		)
+	for _, scoped := range perModel {
+		windows = append(windows, labeledWindow{scoped.Window, fmtutil.ScopedLabel(scoped.Name)})
 	}
 
 	for _, w := range windows {
 		if w.win != nil {
-			segments = append(segments, fmtutil.FormatQuotaWindow(w.win, w.label))
+			segments = append(segments, format(w.win, w.label))
 		}
 	}
 
 	return segments
 }
 
+func appendQuotaWindows(segments []string, data *fmtutil.Data, perModel []fmtutil.ScopedWindow) []string {
+	return appendWindowSegments(segments, data, perModel, fmtutil.FormatQuotaWindow)
+}
+
 func appendUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	if cfg.MacInsecure {
-		return appendInsecureUsageSegments(segments, cfg)
+		return appendInsecureUsageSegments(segments, data, cfg)
 	}
 
 	return appendStdinUsageSegments(segments, data, cfg)
 }
 
 // appendStdinUsageSegments builds quota segments from stdin rate_limits (default, secure path).
+// Per-model windows are unavailable here: stdin carries only the account-wide
+// five_hour and seven_day windows.
 func appendStdinUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
 	quotaData := buildQuotaFromStdin(data)
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, quotaData, false)
+		segments = appendQuotaWindows(segments, quotaData, nil)
 	}
 
 	return segments
 }
 
 // appendInsecureUsageSegments builds quota segments from Anthropic API via macOS Keychain (--mac-insecure).
-func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string {
+// Per-model quotas live only here: the API reports them, stdin does not.
+func appendInsecureUsageSegments(segments []string, data *stdinData, cfg *config.Config) []string {
+	selector := newModelQuotaSelector(data, cfg)
+
 	usageData, err := usage.Fetch()
 	if err != nil {
 		if cfg.Segments.Quota {
-			segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
+			segments = appendStaleQuotaSegments(segments, selector)
 		}
 
 		return segments
@@ -636,13 +723,13 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string
 	case "":
 		// no error, continue
 	case "rate_limit_error":
-		return appendRateLimitSegments(segments, cfg)
+		return appendRateLimitSegments(segments, cfg, selector)
 	default:
 		return append(segments, fmtutil.Part("/login needed", "⚠️"))
 	}
 
 	if cfg.Segments.Quota {
-		segments = appendQuotaWindows(segments, usageData, cfg.Segments.PerModelQuota)
+		segments = appendQuotaWindows(segments, usageData, selector.windows(usageData))
 	}
 
 	if cfg.Segments.Credits && usageData.Extra != nil && usageData.Extra.UsedCredits > 0 {
@@ -653,46 +740,32 @@ func appendInsecureUsageSegments(segments []string, cfg *config.Config) []string
 	return segments
 }
 
-func appendStaleQuotaSegments(segments []string, perModel bool) []string {
+func appendStaleQuotaSegments(segments []string, selector modelQuotaSelector) []string {
 	lastGood := usage.FetchLastGood()
+
+	return appendStaleQuotaWindows(segments, lastGood, selector.windows(lastGood))
+}
+
+// appendStaleQuotaWindows renders last-good data the caller already fetched and
+// already ran through the selector. Both are worth doing once: reading last-good
+// is a file read plus a parse that rewrites the cache, and the rate-limit path
+// needs the selected windows anyway to name the exhausted one.
+func appendStaleQuotaWindows(segments []string, lastGood *fmtutil.Data, perModel []fmtutil.ScopedWindow) []string {
 	if lastGood == nil {
 		return append(segments, fmtutil.Part("7d: ?% (?d)", "⏳"), fmtutil.Part("5h: ?% (?h)", "⏳"))
 	}
 
-	type labeledWindow struct {
-		win   *fmtutil.QuotaWindow
-		label string
-	}
-
-	windows := []labeledWindow{
-		{lastGood.SevenDay, "7d"},
-		{lastGood.FiveHour, "5h"},
-	}
-
-	if perModel {
-		windows = append(windows,
-			labeledWindow{lastGood.SevenDayOpus, labelSevenDayOpus},
-			labeledWindow{lastGood.SevenDaySonnet, labelSevenDaySonnet},
-			labeledWindow{lastGood.SevenDayCowork, labelSevenDayCowork},
-			labeledWindow{lastGood.SevenDayOAuthApps, labelSevenDayOAuthApps},
-		)
-	}
-
-	for _, w := range windows {
-		if w.win != nil {
-			segments = append(segments, fmtutil.FormatStaleQuotaWindow(w.win, w.label))
-		}
-	}
-
-	return segments
+	return appendWindowSegments(segments, lastGood, perModel, fmtutil.FormatStaleQuotaWindow)
 }
 
-func appendRateLimitSegments(segments []string, cfg *config.Config) []string {
+func appendRateLimitSegments(segments []string, cfg *config.Config, selector modelQuotaSelector) []string {
 	lastGood := usage.FetchLastGood()
-	segments = append(segments, fmtutil.FormatRateLimitSegment(fmtutil.FindExhaustedWindow(lastGood, cfg.Segments.PerModelQuota)))
+	perModel := selector.windows(lastGood)
+
+	segments = append(segments, fmtutil.FormatRateLimitSegment(fmtutil.FindExhaustedWindow(lastGood, perModel)))
 
 	if cfg.Segments.Quota {
-		segments = appendStaleQuotaSegments(segments, cfg.Segments.PerModelQuota)
+		segments = appendStaleQuotaWindows(segments, lastGood, perModel)
 	}
 
 	return segments
