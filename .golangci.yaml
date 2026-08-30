@@ -8,9 +8,11 @@ linters:
   disable:
     - depguard
     - exhaustruct
+    - exhaustruct_v5
     - gochecknoinits
     - nonamedreturns
     - wsl
+    - wsl_v5
     - lll
     - ireturn
     - testpackage
