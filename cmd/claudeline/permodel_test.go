@@ -13,6 +13,7 @@ import (
 	"github.com/lexfrei/claudeline/internal/config"
 	"github.com/lexfrei/claudeline/internal/httpclient"
 	"github.com/lexfrei/claudeline/internal/keychain"
+	"github.com/lexfrei/claudeline/internal/provider"
 	"github.com/lexfrei/claudeline/internal/usage"
 )
 
@@ -63,7 +64,7 @@ func TestPerModelQuotaAutoShowsSelectedModelOnly(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-fable: 90%") {
 		t.Errorf("expected the Fable window while Fable is selected, got %q", joined)
@@ -87,7 +88,7 @@ func TestPerModelQuotaAutoFollowsTheModel(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-opus: 12%") {
 		t.Errorf("expected the Opus window while Opus is selected, got %q", joined)
@@ -107,7 +108,7 @@ func TestPerModelQuotaAllShowsEveryWindow(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAll
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg, provider.Anthropic), " | ")
 
 	for _, want := range []string{"7d-opus: 12%", "7d-fable: 90%"} {
 		if !strings.Contains(joined, want) {
@@ -125,7 +126,7 @@ func TestPerModelQuotaOffHidesEveryWindow(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelOff
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg, provider.Anthropic), " | ")
 
 	for _, unwanted := range []string{"7d-fable", "7d-opus"} {
 		if strings.Contains(joined, unwanted) {
@@ -192,7 +193,7 @@ func TestPerModelQuotaAutoPicksTheBindingBucket(t *testing.T) {
 			cfg := insecureCfg()
 			cfg.Segments.PerModelQuota = config.PerModelAuto
 
-			joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-sonnet-4-5", "Sonnet 4.5"), cfg), " | ")
+			joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-sonnet-4-5", "Sonnet 4.5"), cfg, provider.Anthropic), " | ")
 
 			if !strings.Contains(joined, tt.wantSegment) {
 				t.Errorf("expected %q, got %q", tt.wantSegment, joined)
@@ -234,7 +235,7 @@ func TestPerModelQuotaAutoIgnoresOtherVersionsOfTheFamily(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-sonnet-4-5-20250929", "Sonnet 4.5"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-sonnet-4-5-20250929", "Sonnet 4.5"), cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-claude-sonnet-4-5: 12%") {
 		t.Errorf("expected the running model's own bucket, got %q", joined)
@@ -270,7 +271,7 @@ func TestPerModelQuotaAutoMatchesOnServerID(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-storyteller: 42%") {
 		t.Errorf("expected the bucket matched by server id, got %q", joined)
@@ -305,7 +306,7 @@ func TestPerModelQuotaAutoKeepsTheApplicableWindowOnLabelCollision(t *testing.T)
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-opus: 20%") {
 		t.Errorf("expected the family window that applies to this Opus, got %q", joined)
@@ -343,7 +344,7 @@ func TestPerModelQuotaAutoMatchesDatedModelID(t *testing.T) {
 
 	stdin := modelStdin("claude-sonnet-4-5-20250929", "Sonnet 4.5")
 
-	joined := strings.Join(appendUsageSegments(nil, stdin, cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, stdin, cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-sonnet-4-5: 55%") {
 		t.Errorf("expected the dated model id to match the undated bucket id, got %q", joined)
@@ -385,7 +386,7 @@ func TestRateLimitSegmentNamesTheScopedWindow(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-fable-5", "Fable 5"), cfg, provider.Anthropic), " | ")
 
 	if !strings.Contains(joined, "7d-fable limit hit") {
 		t.Errorf("expected the spent Fable bucket to name the limit, got %q", joined)
@@ -403,7 +404,7 @@ func TestRateLimitSegmentIgnoresHiddenWindow(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAuto
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-opus-4-8", "Opus 4.8"), cfg, provider.Anthropic), " | ")
 
 	if strings.Contains(joined, "7d-fable") {
 		t.Errorf("expected the hidden Fable bucket to stay unnamed while Opus is selected, got %q", joined)
@@ -599,7 +600,7 @@ func TestPerModelQuotaAllKeepsOverlappingBuckets(t *testing.T) {
 	cfg := insecureCfg()
 	cfg.Segments.PerModelQuota = config.PerModelAll
 
-	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-sonnet-4-5", "Sonnet 4.5"), cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, modelStdin("claude-sonnet-4-5", "Sonnet 4.5"), cfg, provider.Anthropic), " | ")
 
 	for _, want := range []string{"7d-sonnet: 30%", "7d-sonnet-4-5: 60%"} {
 		if !strings.Contains(joined, want) {
@@ -625,7 +626,7 @@ func TestPerModelQuotaAbsentOnStdinPath(t *testing.T) {
 		ResetsAt:       float64(time.Now().Add(72 * time.Hour).Unix()),
 	}
 
-	joined := strings.Join(appendUsageSegments(nil, data, &cfg), " | ")
+	joined := strings.Join(appendUsageSegments(nil, data, &cfg, provider.Anthropic), " | ")
 
 	if strings.Contains(joined, "7d-fable") {
 		t.Errorf("expected no per-model window on the stdin path, got %q", joined)
