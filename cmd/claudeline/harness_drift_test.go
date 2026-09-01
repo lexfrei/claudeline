@@ -32,7 +32,7 @@ const payloadMarker = "five_hour:{used_percentage"
 var errPayloadNotFound = errors.New("statusline payload literal not found in harness binary")
 
 // knownHarnessPayloadFields pins the snake_case field names of the statusline
-// stdin payload as of Claude Code 2.1.226. On mismatch, re-verify the schema
+// stdin payload as of Claude Code 2.1.257. On mismatch, re-verify the schema
 // against cmd/claudeline/main.go's stdinData (new fields may deserve a
 // segment; renames need a parser change), then update this list.
 func knownHarnessPayloadFields() []string {
@@ -73,9 +73,11 @@ func knownHarnessPayloadFields() []string {
 		"repo",
 		"resets_at",
 		"review_state",
+		"scratchpad_dir",
 		"session_id",
 		"session_name",
 		"seven_day",
+		"spend_limit",
 		"thinking",
 		"total_api_duration_ms",
 		"total_cost_usd",
